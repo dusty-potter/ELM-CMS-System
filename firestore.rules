@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: products
+    // Fields: 
+    //   - name: string (required)
+    //   - manufacturer: string (required, controlled)
+    //   - platform: string
+    //   - status: string (draft, approved, published)
+    //   - allowCanonicalFallback: bool
+    //   - content: map { canonical: string, variants: map }
+    //   - specs: map { features: list, techTerms: list }
+    //   - metadata: map { createdAt: timestamp, updatedAt: timestamp }
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "dusty@earlevelmarketing.com" && request.auth.token.email_verified == true));
+    }
+
+    function isEditor() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'editor'] ||
+          (request.auth.token.email == "dusty@earlevelmarketing.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['name', 'manufacturer', 'status', 'content', 'specs', 'metadata', 'images']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.manufacturer is string && data.manufacturer.size() > 0 &&
+             data.status in ['draft', 'approved', 'published'] &&
+             data.content is map &&
+             data.content.canonical is string &&
+             data.content.canonical.size() < 10000 &&
+             data.content.variants is map &&
+             data.specs is map &&
+             data.specs.features is list &&
+             data.specs.techTerms is list &&
+             data.images is list &&
+             data.metadata is map;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['admin', 'editor', 'viewer'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin()) && isValidUser(request.resource.data);
+      allow update: if isAdmin() && isValidUser(request.resource.data);
+    }
+
+    match /sites/{siteId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /site_publications/{pubId} {
+      allow read: if true; // Public API needs access
+      allow write: if isEditor();
+    }
+
+    match /products/{id} {
+      allow read: if true; // Public API needs read access
+      allow create: if isEditor() && isValidProduct(request.resource.data);
+      allow update: if isEditor() && isValidProduct(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

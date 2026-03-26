@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Hearing Aid Product",
+      "description": "A specific hearing aid model with structured content.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "platform": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "approved", "published"] },
+        "description": { "type": "string" },
+        "features": { "type": "string", "description": "Comma separated list for MVP simplicity" },
+        "techTerms": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "aiVariant": { "type": "string", "description": "Last generated AI rewrite" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "manufacturer", "status"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account information and roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string", "format": "uri" },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Site": {
+      "title": "Connected Site",
+      "description": "A website that consumes product content.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "domain": { "type": "string" },
+        "googleProjectId": { "type": "string", "description": "The AI Studio / Google Cloud Project ID" },
+        "active": { "type": "boolean" },
+        "supportedManufacturers": { "type": "array", "items": { "type": "string" } },
+        "webhookUrl": { "type": "string" },
+        "apiKey": { "type": "string" }
+      },
+      "required": ["id", "name", "domain"]
+    },
+    "SitePublication": {
+      "title": "Site Publication",
+      "description": "The publication state of a product on a specific site.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "siteId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "published", "failed"] },
+        "variantId": { "type": "string" },
+        "canonicalFallback": { "type": "boolean" }
+      },
+      "required": ["id", "productId", "siteId", "status"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": { "schema": "Product", "description": "Hearing aid products." },
+    "/users/{userId}": { "schema": "UserProfile", "description": "User profiles and roles." },
+    "/sites/{siteId}": { "schema": "Site", "description": "Connected sites." },
+    "/site_publications/{pubId}": { "schema": "SitePublication", "description": "Product publications per site." }
+  }
+}
