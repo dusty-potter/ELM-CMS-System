@@ -1,0 +1,591 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// Shared lifecycle status for Platform, Product, FormFactor, and ContentVariant.
+// Nothing reaches `approved` or `published` without explicit human action.
+enum PublishStatus {
+  draft
+  approved
+  published
+}
+
+// Scope of a content variant — global applies to all sites, site_specific is
+// pinned to one Site record.
+enum VariantScope {
+  global
+  site_specific
+}
+
+// Status of a SitePublication record (distinct from the content's PublishStatus).
+enum SitePublicationStatus {
+  pending
+  published
+  failed
+}
+
+// Ingestion confidence — set by the pipeline, reviewed by a human.
+enum ConfidenceLevel {
+  high
+  medium
+  low
+}
+
+// Functional grouping for platform capabilities.
+enum CapabilityCategory {
+  processing
+  connectivity
+  health
+  physical
+}
+
+// Commercial tier — lives on Product, not Platform.
+enum ProductTier {
+  premium
+  advanced
+  standard
+  essential
+}
+
+// Physical device style — exhaustive for current form factor types.
+// `other` is the escape hatch for novel styles.
+enum FormFactorStyle {
+  RIC
+  BTE
+  ITE
+  CIC
+  IIC
+  miniRITE
+  other
+}
+
+enum BatteryType {
+  disposable
+  rechargeable
+}
+
+// Used for normalized comparison data on Product (speechInNoise, musicQuality).
+enum ComparisonLevel {
+  low
+  medium
+  high
+}
+
+enum ImageType {
+  hero
+  gallery
+}
+
+// ---------------------------------------------------------------------------
+// Manufacturer
+// ---------------------------------------------------------------------------
+
+model Manufacturer {
+  id   String @id @default(cuid())
+  name String @unique // Canonical brand name, e.g. "Signia"
+  slug String @unique
+  // Alternate names/spellings the ingestion pipeline should recognize.
+  aliases String[]
+
+  // Ingestion is restricted to these domains. Images and data sourced from
+  // any other domain are rejected before download.
+  approvedDomains String[]
+  // URL patterns for manufacturer product pages used by the scraper.
+  productPagePatterns String[]
+  // Manufacturer-specific scraping rules (field selectors, pagination, etc.).
+  // Managed manually by admins — never auto-generated or AI-written.
+  scrapingConfig Json?
+
+  // Stored locally; never hotlinked.
+  logoUrl String?
+  active  Boolean @default(true)
+
+  // Ingestion provenance fields — present on all four core entities.
+  autoFilled      Boolean          @default(false)
+  confidenceLevel ConfidenceLevel?
+  ingestSource    String?
+
+  platforms    Platform[]
+  products     Product[]
+  formFactors  FormFactor[]
+  siteSupport  SiteManufacturer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("manufacturers")
+}
+
+// ---------------------------------------------------------------------------
+// Platform
+// ---------------------------------------------------------------------------
+
+// Represents a technology generation — chipset, core processing architecture,
+// and the ceiling of what that technology can do.
+model Platform {
+  id             String       @id @default(cuid())
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id], onDelete: Restrict)
+  name           String // Canonical, e.g. "IX"
+  displayName    String? // Marketing label, e.g. "Signia IX Series"
+  slug           String
+  generationYear Int?
+  status         PublishStatus @default(draft)
+
+  // Technology narrative — human-authored.
+  summary            String?
+  keyDifferentiators String[]
+  // Controlled vocabulary for this platform's technology.
+  // These terms are LOCKED — AI cannot rename, redefine, or generate new entries.
+  techTerms String[]
+
+  // Connectivity ceiling — the maximum the platform supports at its best.
+  // Individual products may not support all of these.
+  connectivityIos           Boolean @default(false)
+  connectivityAndroid       Boolean @default(false)
+  connectivityBluetooth     Boolean @default(false)
+  connectivityAuracast      Boolean @default(false)
+  connectivityHandsFree     Boolean @default(false)
+  connectivityRemoteControl Boolean @default(false)
+
+  // Ingestion provenance
+  autoFilled      Boolean          @default(false)
+  confidenceLevel ConfidenceLevel?
+  ingestSource    String?
+
+  capabilityPool PlatformCapability[]
+  products       Product[]
+  formFactors    FormFactor[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Platform slug is unique within a manufacturer.
+  @@unique([manufacturerId, slug])
+  @@map("platforms")
+}
+
+// ---------------------------------------------------------------------------
+// Platform Capability Pool
+//
+// The master list of everything this platform can do at its ceiling.
+// Products and FormFactors declare explicit subsets — nothing is inherited.
+// ---------------------------------------------------------------------------
+
+model PlatformCapability {
+  id         String   @id @default(cuid())
+  platformId String
+  platform   Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  // Machine-readable key, unique within a platform. E.g. "binaural-directionality".
+  key      String
+  label    String // Human-readable. E.g. "Binaural Directionality".
+  category CapabilityCategory
+  // One-line canonical description — human-authored.
+  description String?
+  // If true, this is a controlled tech term. AI cannot rename, redefine, or
+  // generate new entries for it. Enforced at the application layer.
+  techTerm Boolean @default(false)
+
+  productDeclarations ProductCapabilityDeclaration[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platformId, key])
+  @@map("platform_capabilities")
+}
+
+// ---------------------------------------------------------------------------
+// Product
+//
+// A specific tier level within a platform (e.g. IX7, IX5, IX3).
+// Owns the commercial positioning and is the attachment point for content.
+// ---------------------------------------------------------------------------
+
+model Product {
+  id             String       @id @default(cuid())
+  platformId     String
+  platform       Platform     @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id], onDelete: Restrict)
+
+  name        String // Canonical. E.g. "IX7".
+  displayName String? // Marketing. E.g. "Signia IX7".
+  slug        String        @unique
+  tier        ProductTier?
+  status      PublishStatus @default(draft)
+
+  // Ingestion provenance
+  autoFilled      Boolean          @default(false)
+  confidenceLevel ConfidenceLevel?
+  ingestSource    String?
+
+  // ── Normalized comparison data ──────────────────────────────────────────
+  // Derived from declaredCapabilities but stored explicitly for query
+  // performance on comparison and filtering pages.
+  compSpeechInNoise   ComparisonLevel?
+  compMusicQuality    ComparisonLevel?
+  compTinnitusSupport Boolean?
+  compAiProcessing    Boolean?
+  compRemoteCare      Boolean?
+  compHealthTracking  Boolean?
+  compFallDetection   Boolean?
+
+  // ── Positioning ──────────────────────────────────────────────────────────
+  bestFor         String[]
+  pros            String[]
+  // MUST NOT include universal clinical truths — enforced at application layer.
+  cons            String[]
+  targetUser      String?
+  hearingLossRange String[]
+
+  // ── Value positioning ────────────────────────────────────────────────────
+  valueSummary   String?
+  upgradeReasons String[]
+
+  // ── Content layer ────────────────────────────────────────────────────────
+  // The authoritative description. Human-authored or human-approved.
+  // AI rewrites produce variants; they never modify this field.
+  canonicalDescription    String?
+  allowCanonicalFallback  Boolean @default(true)
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  declaredCapabilities ProductCapabilityDeclaration[]
+  formFactors          FormFactor[]
+  variants             ContentVariant[]
+  publications         SitePublication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Rule: a product cannot be published without at least one approved form factor.
+  // This constraint is enforced at the application layer (not DB-level) because
+  // it requires querying a related table.
+
+  @@map("products")
+}
+
+// ---------------------------------------------------------------------------
+// Product Capability Declaration
+//
+// Explicit subset of the parent platform's capability pool.
+// `confirmed` = a human has verified this declaration; false = pipeline-mapped,
+// pending review. FormFactors may only declare from this set (not the full pool).
+// ---------------------------------------------------------------------------
+
+model ProductCapabilityDeclaration {
+  id           String             @id @default(cuid())
+  productId    String
+  product      Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  capabilityId String
+  // FK to PlatformCapability enforces that only pool-level capabilities are declared.
+  capability   PlatformCapability @relation(fields: [capabilityId], references: [id], onDelete: Restrict)
+
+  confirmed Boolean @default(false)
+  notes     String?
+
+  formFactorDeclarations FormFactorCapabilityDeclaration[]
+  formFactorExclusions   FormFactorCapabilityExclusion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, capabilityId])
+  @@map("product_capability_declarations")
+}
+
+// ---------------------------------------------------------------------------
+// FormFactor
+//
+// A physical device style for a specific product tier (e.g. IX7 miniRITE R).
+// Declares which product-level capabilities it supports — some form factors
+// physically cannot support all capabilities the product declares.
+// ---------------------------------------------------------------------------
+
+model FormFactor {
+  id             String       @id @default(cuid())
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // Denormalized for query efficiency — avoids join through Product.
+  platformId     String
+  platform       Platform     @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id], onDelete: Restrict)
+
+  style  FormFactorStyle
+  name   String // Canonical. E.g. "miniRITE R".
+  slug   String
+  status PublishStatus @default(draft)
+
+  // Some form factors release to premium tier first; this tracks the rollout.
+  availableAtLaunch Boolean   @default(true)
+  launchDate        DateTime?
+
+  // Ingestion provenance
+  autoFilled      Boolean          @default(false)
+  confidenceLevel ConfidenceLevel?
+  ingestSource    String?
+
+  // ── Physical specifications ──────────────────────────────────────────────
+  batteryType          BatteryType?
+  batterySize          String? // E.g. "312", "13" for disposable; null for rechargeable.
+  batteryEstimatedHours Int?
+  ipRating             String? // E.g. "IP68".
+  waterResistant       Boolean     @default(false)
+  colors               String[]
+  // Applicable for RIC/miniRITE styles.
+  receiverOptions      String[]
+
+  // ── Connectivity (explicit confirmation for this form factor) ────────────
+  // Even if the product declares connectivity capabilities, each form factor
+  // must explicitly confirm which it supports given its physical constraints.
+  connectivityIos       Boolean @default(false)
+  connectivityAndroid   Boolean @default(false)
+  connectivityBluetooth Boolean @default(false)
+  connectivityAuracast  Boolean @default(false)
+  connectivityHandsFree Boolean @default(false)
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+  declaredCapabilities  FormFactorCapabilityDeclaration[]
+  capabilityExclusions  FormFactorCapabilityExclusion[]
+  images                FormFactorImage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A product cannot have two form factors with the same slug.
+  @@unique([productId, slug])
+  @@map("form_factors")
+}
+
+// ---------------------------------------------------------------------------
+// FormFactor Capability Declaration
+//
+// FK points to ProductCapabilityDeclaration — not PlatformCapability directly.
+// This is the DB-level enforcement of the inheritance rule: a FormFactor can
+// only declare a capability its parent Product has already declared.
+//
+// `exclusionReason` documents why a product-level capability is physically
+// absent from this form factor. Presence of a row = included; absence = excluded.
+// exclusionReason on an included row may note caveats (e.g. "requires accessory").
+// ---------------------------------------------------------------------------
+
+model FormFactorCapabilityDeclaration {
+  id                             String                       @id @default(cuid())
+  formFactorId                   String
+  formFactor                     FormFactor                   @relation(fields: [formFactorId], references: [id], onDelete: Cascade)
+  productCapabilityDeclarationId String
+  // FK to ProductCapabilityDeclaration enforces the inheritance constraint.
+  productDeclaration             ProductCapabilityDeclaration @relation(fields: [productCapabilityDeclarationId], references: [id], onDelete: Restrict)
+
+  confirmed       Boolean @default(false)
+  // Optional note on physical constraints or caveats for this form factor.
+  exclusionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([formFactorId, productCapabilityDeclarationId])
+  @@map("form_factor_capability_declarations")
+}
+
+// ---------------------------------------------------------------------------
+// FormFactor Capability Exclusion
+//
+// Explicit record that a form factor does NOT support a capability its parent
+// product has declared. Required for the ingestion review UI to surface gaps
+// during gap-fill — absence of a declaration row is ambiguous (unknown vs.
+// confirmed excluded); this table makes the exclusion explicit and auditable.
+//
+// A capability cannot appear in both form_factor_capability_declarations AND
+// form_factor_capability_exclusions for the same form factor. This is enforced
+// at the application layer (not DB-level, as a cross-table CHECK would require
+// a function).
+//
+// `productCapabilityDeclarationId` references product_capability_declarations,
+// not platform_capabilities directly. This maintains the same inheritance
+// enforcement as the declarations table: a form factor can only reference
+// capabilities its parent product has already declared.
+// ---------------------------------------------------------------------------
+
+model FormFactorCapabilityExclusion {
+  id                             String     @id @default(cuid())
+  formFactorId                   String
+  formFactor                     FormFactor @relation(fields: [formFactorId], references: [id], onDelete: Cascade)
+  productCapabilityDeclarationId String
+  // FK to ProductCapabilityDeclaration — enforces that only capabilities in
+  // the parent product's declared set can be explicitly excluded here.
+  productDeclaration             ProductCapabilityDeclaration @relation(fields: [productCapabilityDeclarationId], references: [id], onDelete: Restrict)
+
+  // Why this form factor cannot support this capability (e.g. physical size,
+  // missing hardware component). Required for meaningful gap-fill review.
+  exclusionReason String?
+
+  // Who confirmed this exclusion and when. Null until a human reviews it.
+  // Stores a user identifier from the auth system (email or ID).
+  confirmedBy String?
+  confirmedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A form factor can only have one exclusion record per capability.
+  @@unique([formFactorId, productCapabilityDeclarationId])
+  @@map("form_factor_capability_exclusions")
+}
+
+// ---------------------------------------------------------------------------
+// FormFactor Image
+//
+// Images are downloaded at ingestion time and stored locally — never hotlinked.
+// sourceUrl is retained for audit. All served URLs reference localUrl or
+// processed variants. Source domain is validated against manufacturer.approvedDomains
+// before download.
+// ---------------------------------------------------------------------------
+
+model FormFactorImage {
+  id           String     @id @default(cuid())
+  formFactorId String
+  formFactor   FormFactor @relation(fields: [formFactorId], references: [id], onDelete: Cascade)
+
+  type      ImageType
+  // Where the image was originally sourced — validated against approvedDomains.
+  sourceUrl String
+  // Path/URL in local storage after download. All serving references this.
+  localUrl  String
+
+  // Processed variant URLs (generated from localUrl after download).
+  // Null until image processing has run.
+  variantHeroWide  String?
+  variantSquare    String?
+  variantThumbnail String?
+
+  // Focal point for smart cropping (0.0–1.0 in each axis).
+  focalPointX Float?
+  focalPointY Float?
+
+  // Ordering within gallery; hero images should use sortOrder 0.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("form_factor_images")
+}
+
+// ---------------------------------------------------------------------------
+// Content Variant
+//
+// AI-generated rewrites of a product's canonical description.
+// Stored as rows (not JSONB) so they can be filtered by status/scope/siteId
+// and referenced by FK from SitePublication.variantId.
+//
+// AI-generated variants always land in `draft` and require explicit approval
+// before reaching `published`. `aiGenerated` flags them for the review UI.
+// ---------------------------------------------------------------------------
+
+model ContentVariant {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  text   String
+  status PublishStatus @default(draft)
+  scope  VariantScope
+  // Null for global scope; set to a Site.id for site_specific scope.
+  siteId String?
+
+  // True if generated by an AI model; false if human-authored.
+  aiGenerated   Boolean @default(false)
+  modelName     String?
+  promptVersion String?
+
+  publications SitePublication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("content_variants")
+}
+
+// ---------------------------------------------------------------------------
+// Site
+// ---------------------------------------------------------------------------
+
+model Site {
+  id         String  @id // Human-readable slug. Used in API routes and webhook payloads.
+  name       String
+  domain     String  @unique
+  webhookUrl String?
+  // Generated at site creation; required on all delivery API requests.
+  apiKey     String  @unique
+  active     Boolean @default(true)
+
+  supportedManufacturers SiteManufacturer[]
+  publications           SitePublication[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sites")
+}
+
+// ---------------------------------------------------------------------------
+// Site ↔ Manufacturer (join table)
+// Referential integrity over the legacy String[] approach.
+// ---------------------------------------------------------------------------
+
+model SiteManufacturer {
+  siteId         String
+  site           Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id], onDelete: Cascade)
+
+  @@id([siteId, manufacturerId])
+  @@map("site_manufacturers")
+}
+
+// ---------------------------------------------------------------------------
+// Site Publication
+//
+// The gate between a product existing in the CMS and it being served to a
+// specific site. A product having status `published` does NOT mean it is
+// served to a site — a SitePublication row with status `published` must exist.
+// The delivery API must verify this before serving content.
+// ---------------------------------------------------------------------------
+
+model SitePublication {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  siteId    String
+  site      Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  status SitePublicationStatus @default(pending)
+
+  // The variant pinned to this publication. Null = canonical fallback applies
+  // (requires product.allowCanonicalFallback = true).
+  variantId         String?
+  variant           ContentVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  canonicalFallback Boolean         @default(false)
+
+  lastSyncedAt DateTime?
+  // Non-null when status = failed.
+  error        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([siteId, productId])
+  @@map("site_publications")
+}
