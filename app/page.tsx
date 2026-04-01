@@ -11,10 +11,16 @@ export default function Home() {
 
       <div className="flex flex-col gap-3 w-full max-w-xs">
         <Link
-          href="/ingest"
+          href="/scan"
           className="bg-brand-blue hover:bg-blue-500 text-white font-semibold py-3 px-6 rounded-xl text-center transition-colors"
         >
-          Research a Product
+          Scan Manufacturer Lineup
+        </Link>
+        <Link
+          href="/ingest"
+          className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold py-3 px-6 rounded-xl text-center transition-colors"
+        >
+          Research a Single Product
         </Link>
       </div>
     </div>
