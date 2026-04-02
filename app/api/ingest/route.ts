@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import Anthropic from '@anthropic-ai/sdk'
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   const { manufacturer, modelName } = await req.json()
@@ -7,9 +10,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'manufacturer and modelName are required' }, { status: 400 })
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 })
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not configured' }, { status: 500 })
   }
 
   const prompt = `You are a hearing aid product database expert with deep knowledge of the audiology industry.
@@ -70,42 +72,32 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   "confidenceLevel": "high if you have strong specific knowledge of this exact model, medium if approximate, low if mostly inferred"
 }`
 
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    }
-  )
-
-  if (!geminiRes.ok) {
-    const errText = await geminiRes.text()
-    console.error('Gemini error:', errText)
-    let detail = 'AI research request failed'
-    try {
-      const errJson = JSON.parse(errText)
-      detail = errJson?.error?.message ?? detail
-    } catch {}
-    return NextResponse.json({ error: detail }, { status: 502 })
-  }
-
-  const geminiData = await geminiRes.json()
-  const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
-
-  if (!rawText) {
-    return NextResponse.json({ error: 'No content returned from AI' }, { status: 502 })
-  }
-
-  let product: unknown
   try {
-    product = JSON.parse(rawText)
-  } catch {
-    return NextResponse.json({ error: 'AI returned malformed JSON' }, { status: 502 })
-  }
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }],
+    })
 
-  return NextResponse.json({ manufacturer, modelName, product })
+    const rawText = message.content[0].type === 'text' ? message.content[0].text : null
+    if (!rawText) {
+      return NextResponse.json({ error: 'No content returned from AI' }, { status: 502 })
+    }
+
+    // Strip markdown code fences if present
+    const cleaned = rawText.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()
+
+    let product: unknown
+    try {
+      product = JSON.parse(cleaned)
+    } catch {
+      return NextResponse.json({ error: 'AI returned malformed JSON' }, { status: 502 })
+    }
+
+    return NextResponse.json({ manufacturer, modelName, product })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'AI research request failed'
+    console.error('Anthropic error:', e)
+    return NextResponse.json({ error: message }, { status: 502 })
+  }
 }
