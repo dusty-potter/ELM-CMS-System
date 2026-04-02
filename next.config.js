@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Cloud Run serves on PORT env var; Next.js respects this automatically.
-  // Image optimization: allow Firebase Storage domain from legacy imports during migration.
+  output: 'standalone',
   images: {
     remotePatterns: [
       {
@@ -11,5 +10,4 @@ const nextConfig = {
     ],
   },
 };
-
 module.exports = nextConfig;
