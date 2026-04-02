@@ -531,6 +531,11 @@ model Site {
   apiKey     String  @unique
   active     Boolean @default(true)
 
+  // GitHub + Cloud Run deployment info
+  githubRepo       String? // e.g. "dusty-potter/client-site-name"
+  cloudRunService  String? // Cloud Run service name for this site
+  cloudRunRegion   String? @default("us-central1")
+
   supportedManufacturers SiteManufacturer[]
   publications           SitePublication[]
 
