@@ -14,6 +14,9 @@ type Site = {
   webhookUrl: string | null
   apiKey: string
   active: boolean
+  githubRepo: string | null
+  cloudRunService: string | null
+  cloudRunRegion: string | null
   supportedManufacturers: { manufacturer: { name: string } }[]
   _count: { publications: number }
   createdAt: string
@@ -37,7 +40,7 @@ export default function SitesPage() {
   const [error, setError] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [newSite, setNewSite] = useState({ name: '', domain: '', webhookUrl: '', manufacturers: [] as string[] })
+  const [newSite, setNewSite] = useState({ name: '', domain: '', webhookUrl: '', githubRepo: '', cloudRunService: '', cloudRunRegion: 'us-central1', manufacturers: [] as string[] })
 
   function fetchSites() {
     setLoading(true)
@@ -73,6 +76,9 @@ export default function SitesPage() {
           name: newSite.name,
           domain: newSite.domain,
           webhookUrl: newSite.webhookUrl || null,
+          githubRepo: newSite.githubRepo || null,
+          cloudRunService: newSite.cloudRunService || null,
+          cloudRunRegion: newSite.cloudRunRegion || 'us-central1',
           manufacturerNames: newSite.manufacturers,
         }),
       })
@@ -80,7 +86,7 @@ export default function SitesPage() {
       if (!res.ok) throw new Error(data.error)
       setSites((prev) => [data, ...prev])
       setIsAdding(false)
-      setNewSite({ name: '', domain: '', webhookUrl: '', manufacturers: [] })
+      setNewSite({ name: '', domain: '', webhookUrl: '', githubRepo: '', cloudRunService: '', cloudRunRegion: 'us-central1', manufacturers: [] })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add site')
     } finally {
@@ -159,6 +165,39 @@ export default function SitesPage() {
                 className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-blue outline-none transition-colors"
               />
             </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">GitHub Repo <span className="text-zinc-700 normal-case font-normal">(optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. dusty-potter/client-site"
+                value={newSite.githubRepo}
+                onChange={(e) => setNewSite({ ...newSite, githubRepo: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-blue outline-none transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Cloud Run Service <span className="text-zinc-700 normal-case font-normal">(optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. client-site-name"
+                value={newSite.cloudRunService}
+                onChange={(e) => setNewSite({ ...newSite, cloudRunService: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-blue outline-none transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Cloud Run Region</label>
+              <select
+                value={newSite.cloudRunRegion}
+                onChange={(e) => setNewSite({ ...newSite, cloudRunRegion: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-3 text-white text-sm focus:border-brand-blue outline-none transition-colors"
+              >
+                <option value="us-central1">us-central1</option>
+                <option value="us-west1">us-west1</option>
+                <option value="us-east1">us-east1</option>
+                <option value="europe-west1">europe-west1</option>
+              </select>
+            </div>
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-zinc-500 uppercase mb-3">Supported Manufacturers</label>
               <div className="flex flex-wrap gap-2">
@@ -236,7 +275,7 @@ export default function SitesPage() {
                   </div>
                 )}
 
-                {/* API Key + Webhook */}
+                {/* API Key + Webhook + Deployment */}
                 <div className="space-y-2">
                   <div className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5">
                     <p className="text-[10px] font-bold text-zinc-600 uppercase mb-1">API Key</p>
@@ -249,6 +288,25 @@ export default function SitesPage() {
                     <p className="text-[10px] font-bold text-zinc-600 uppercase mb-1">Webhook URL</p>
                     <p className="text-xs text-zinc-400 truncate">{site.webhookUrl || 'Not configured'}</p>
                   </div>
+                  {site.githubRepo && (
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] font-bold text-zinc-600 uppercase mb-1">GitHub Repo</p>
+                      <a
+                        href={`https://github.com/${site.githubRepo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand-blue hover:underline font-mono truncate block"
+                      >
+                        {site.githubRepo}
+                      </a>
+                    </div>
+                  )}
+                  {site.cloudRunService && (
+                    <div className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] font-bold text-zinc-600 uppercase mb-1">Cloud Run</p>
+                      <p className="text-xs text-zinc-400 font-mono">{site.cloudRunService} <span className="text-zinc-600">({site.cloudRunRegion})</span></p>
+                    </div>
+                  )}
                 </div>
               </div>
             ))

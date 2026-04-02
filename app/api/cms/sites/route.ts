@@ -20,7 +20,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { name, domain, webhookUrl, manufacturerNames } = await req.json()
+  const { name, domain, webhookUrl, githubRepo, cloudRunService, cloudRunRegion, manufacturerNames } = await req.json()
 
   if (!name || !domain) {
     return NextResponse.json({ error: 'name and domain are required' }, { status: 400 })
@@ -36,6 +36,9 @@ export async function POST(req: NextRequest) {
         name,
         domain,
         webhookUrl: webhookUrl || null,
+        githubRepo: githubRepo || null,
+        cloudRunService: cloudRunService || null,
+        cloudRunRegion: cloudRunRegion || 'us-central1',
         apiKey,
         active: true,
         supportedManufacturers: manufacturerNames?.length
