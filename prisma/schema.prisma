@@ -40,6 +40,13 @@ enum ConfidenceLevel {
   low
 }
 
+// Role for CMS users.
+enum UserRole {
+  admin
+  editor
+  viewer
+}
+
 // Functional grouping for platform capabilities.
 enum CapabilityCategory {
   processing
@@ -83,6 +90,25 @@ enum ComparisonLevel {
 enum ImageType {
   hero
   gallery
+}
+
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String?
+  image      String?
+  role       UserRole @default(viewer)
+  active     Boolean  @default(true)
+  lastSignIn DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
 }
 
 // ---------------------------------------------------------------------------

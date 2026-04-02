@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Nav from "./components/Nav";
+import SessionProvider from "./components/SessionProvider";
 
 export const metadata: Metadata = {
   title: "ELM CMS",
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Nav />
-        <div className="pt-14">{children}</div>
+        <SessionProvider>
+          <Nav />
+          <div className="pt-14">{children}</div>
+        </SessionProvider>
       </body>
     </html>
   );
