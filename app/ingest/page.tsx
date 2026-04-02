@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 const MANUFACTURERS = [
   'Phonak', 'Oticon', 'Starkey', 'ReSound', 'Widex',
-  'Signia', 'Unitron', 'Philips', 'Bernafon', 'Hansaton',
+  'Signia', 'Unitron', 'Audibel', 'Beltone', 'Lenire',
 ]
 
 type Capability = {

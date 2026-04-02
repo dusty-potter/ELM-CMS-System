@@ -85,7 +85,12 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
   if (!geminiRes.ok) {
     const errText = await geminiRes.text()
     console.error('Gemini error:', errText)
-    return NextResponse.json({ error: 'AI research request failed' }, { status: 502 })
+    let detail = 'AI research request failed'
+    try {
+      const errJson = JSON.parse(errText)
+      detail = errJson?.error?.message ?? detail
+    } catch {}
+    return NextResponse.json({ error: detail }, { status: 502 })
   }
 
   const geminiData = await geminiRes.json()

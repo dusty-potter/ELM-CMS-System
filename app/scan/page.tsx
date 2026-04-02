@@ -5,8 +5,10 @@ import Link from 'next/link'
 
 const MANUFACTURERS = [
   'Phonak', 'Oticon', 'Starkey', 'ReSound', 'Widex',
-  'Signia', 'Unitron', 'Philips', 'Bernafon', 'Hansaton',
+  'Signia', 'Unitron', 'Audibel', 'Beltone', 'Lenire',
 ]
+
+const CUSTOM = '__custom__'
 
 const TIER_STYLES: Record<string, string> = {
   premium:   'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -78,15 +80,24 @@ function StatusPill({ status }: { status: ResearchStatus }) {
 
 export default function ScanPage() {
   const [step, setStep] = useState<'input' | 'loading' | 'results'>('input')
+  const [manufacturerSelect, setManufacturerSelect] = useState('')
+  const [customName, setCustomName] = useState('')
+  const [customUrl, setCustomUrl] = useState('')
   const [manufacturer, setManufacturer] = useState('')
   const [products, setProducts] = useState<ScannedProduct[]>([])
   const [error, setError] = useState<string | null>(null)
   const [bulkResearching, setBulkResearching] = useState(false)
 
+  const isCustom = manufacturerSelect === CUSTOM
+  const resolvedManufacturer = isCustom ? customName.trim() : manufacturerSelect
+  const canScan = isCustom ? !!customName.trim() : !!manufacturerSelect
+
   // ── Scan ──
 
   async function handleScan() {
-    if (!manufacturer) return
+    if (!canScan) return
+    const mfr = resolvedManufacturer
+    setManufacturer(mfr)
     setStep('loading')
     setError(null)
 
@@ -94,7 +105,10 @@ export default function ScanPage() {
       const res = await fetch('/api/ingest/enumerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer }),
+        body: JSON.stringify({
+          manufacturer: mfr,
+          url: isCustom && customUrl.trim() ? customUrl.trim() : undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
@@ -202,20 +216,49 @@ export default function ScanPage() {
             <div>
               <label className="block text-sm font-medium text-zinc-400 mb-2">Manufacturer</label>
               <select
-                value={manufacturer}
-                onChange={(e) => setManufacturer(e.target.value)}
+                value={manufacturerSelect}
+                onChange={(e) => setManufacturerSelect(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:border-brand-blue outline-none transition-colors"
               >
                 <option value="">Select manufacturer…</option>
                 {MANUFACTURERS.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
+                <option value={CUSTOM}>Custom / Other…</option>
               </select>
             </div>
 
+            {isCustom && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-2">Manufacturer / Brand Name</label>
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Amplifon, Costco Kirkland"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:border-brand-blue outline-none transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-2">
+                    Product Listing URL <span className="text-zinc-600 font-normal">(optional — helps AI find accurate info)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="https://example.com/hearing-aids"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:border-brand-blue outline-none transition-colors"
+                  />
+                  <p className="text-xs text-zinc-600 mt-1.5">URL is passed to the AI as a reference hint. Full web scraping coming in a future update.</p>
+                </div>
+              </>
+            )}
+
             <button
               onClick={handleScan}
-              disabled={!manufacturer}
+              disabled={!canScan}
               className="w-full bg-brand-blue hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors"
             >
               Scan Lineup

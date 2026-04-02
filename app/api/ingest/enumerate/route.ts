@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  const { manufacturer } = await req.json()
+  const { manufacturer, url } = await req.json()
 
   if (!manufacturer) {
     return NextResponse.json({ error: 'manufacturer is required' }, { status: 400 })
@@ -12,11 +12,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 })
   }
 
-  const prompt = `You are a hearing aid industry expert with comprehensive knowledge of manufacturer product lineups.
+  const urlHint = url ? `\nThe user has provided this URL as a reference: ${url}\nUse it as a hint for the brand context, but rely on your training knowledge for product details.` : ''
 
-List ALL currently available hearing aid products made by ${manufacturer}.
-Include every tier level across every active platform.
+  const prompt = `You are an audiology industry expert with comprehensive knowledge of hearing aid and hearing health product lineups.
+
+List ALL currently available products made by ${manufacturer}.
+Include every tier level across every active platform or product family.
 Do NOT include discontinued products unless they are still actively sold and supported as of 2024-2025.
+If ${manufacturer} is not a hearing aid brand but a related hearing health product (e.g. a tinnitus treatment device), list their current product(s) accurately — do not force them into hearing aid categories.${urlHint}
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
@@ -25,16 +28,16 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
     {
       "name": "canonical product name only, no manufacturer prefix (e.g. 'Audéo L90', 'Intent 1', 'IX7')",
       "displayName": "full marketing name with manufacturer (e.g. 'Phonak Audéo L90')",
-      "platform": "technology platform/chipset name (e.g. 'Lumity', 'IX', 'Infinio') or null",
+      "platform": "technology platform or product family name, or null if not applicable",
       "tier": "one of: premium, advanced, standard, essential — or null if not applicable",
       "releaseYear": year as integer or null,
-      "formFactorStyles": ["array of styles available: RIC, BTE, ITE, CIC, IIC, miniRITE, other"]
+      "formFactorStyles": ["array of applicable styles: RIC, BTE, ITE, CIC, IIC, miniRITE, other — use ['other'] for non-hearing-aid devices"]
     }
   ]
 }
 
 Sort products by platform (newest first), then by tier within each platform (premium first).
-Be comprehensive — include ALL tiers for each platform. For example, if Lumity has L90, L70, L50, L30, include all four.`
+Be comprehensive — include ALL tiers for each platform.`
 
   const geminiRes = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -51,7 +54,12 @@ Be comprehensive — include ALL tiers for each platform. For example, if Lumity
   if (!geminiRes.ok) {
     const errText = await geminiRes.text()
     console.error('Gemini error:', errText)
-    return NextResponse.json({ error: 'AI enumeration request failed' }, { status: 502 })
+    let detail = 'AI enumeration request failed'
+    try {
+      const errJson = JSON.parse(errText)
+      detail = errJson?.error?.message ?? detail
+    } catch {}
+    return NextResponse.json({ error: detail }, { status: 502 })
   }
 
   const geminiData = await geminiRes.json()
