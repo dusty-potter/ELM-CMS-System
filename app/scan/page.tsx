@@ -22,6 +22,7 @@ const TIER_ORDER: Record<string, number> = {
 }
 
 type ResearchStatus = 'idle' | 'loading' | 'done' | 'error'
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
 type ScannedProduct = {
   name: string
@@ -32,6 +33,8 @@ type ScannedProduct = {
   formFactorStyles: string[]
   active: boolean
   researchStatus: ResearchStatus
+  researchedData: Record<string, unknown> | null
+  saveStatus: SaveStatus
 }
 
 // ── Toggle switch ──────────────────────────────────────────────────────────────
@@ -113,10 +116,12 @@ export default function ScanPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
 
-      const scanned: ScannedProduct[] = (data.products ?? []).map((p: Omit<ScannedProduct, 'active' | 'researchStatus'>) => ({
+      const scanned: ScannedProduct[] = (data.products ?? []).map((p: Omit<ScannedProduct, 'active' | 'researchStatus' | 'researchedData' | 'saveStatus'>) => ({
         ...p,
         active: true,
         researchStatus: 'idle' as ResearchStatus,
+        researchedData: null,
+        saveStatus: 'idle' as SaveStatus,
       }))
 
       setProducts(scanned)
@@ -155,11 +160,38 @@ export default function ScanPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Research failed')
       setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, researchStatus: 'done' } : p)
+        prev.map((p) => p.name === name
+          ? { ...p, researchStatus: 'done', researchedData: data.product }
+          : p
+        )
       )
     } catch {
       setProducts((prev) =>
         prev.map((p) => p.name === name ? { ...p, researchStatus: 'error' } : p)
+      )
+    }
+  }
+
+  async function saveProduct(name: string) {
+    const product = products.find((p) => p.name === name)
+    if (!product?.researchedData) return
+    setProducts((prev) =>
+      prev.map((p) => p.name === name ? { ...p, saveStatus: 'saving' } : p)
+    )
+    try {
+      const res = await fetch('/api/cms/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer, modelName: name, product: product.researchedData }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setProducts((prev) =>
+        prev.map((p) => p.name === name ? { ...p, saveStatus: 'saved' } : p)
+      )
+    } catch {
+      setProducts((prev) =>
+        prev.map((p) => p.name === name ? { ...p, saveStatus: 'error' } : p)
       )
     }
   }
@@ -175,11 +207,20 @@ export default function ScanPage() {
     setBulkResearching(false)
   }
 
+  async function handleSaveActive() {
+    const targets = products.filter((p) => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle')
+    for (const product of targets) {
+      await saveProduct(product.name)
+    }
+  }
+
   // ── Derived counts ──
 
-  const activeCount   = products.filter((p) => p.active).length
-  const inactiveCount = products.length - activeCount
+  const activeCount       = products.filter((p) => p.active).length
+  const inactiveCount     = products.length - activeCount
   const researchableCount = products.filter((p) => p.active && p.researchStatus === 'idle').length
+  const savableCount      = products.filter((p) => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle').length
+  const savedCount        = products.filter((p) => p.saveStatus === 'saved').length
 
   // ── Group by platform ──
 
@@ -309,7 +350,7 @@ export default function ScanPage() {
 
       {/* Summary bar */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-4 flex-1 flex-wrap">
           <div className="text-sm">
             <span className="text-emerald-400 font-bold">{activeCount}</span>
             <span className="text-zinc-500 ml-1">active</span>
@@ -318,6 +359,12 @@ export default function ScanPage() {
             <span className="text-zinc-400 font-bold">{inactiveCount}</span>
             <span className="text-zinc-500 ml-1">inactive</span>
           </div>
+          {savedCount > 0 && (
+            <div className="text-sm">
+              <span className="text-emerald-400 font-bold">{savedCount}</span>
+              <span className="text-zinc-500 ml-1">saved to CMS</span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -336,11 +383,16 @@ export default function ScanPage() {
           <button
             onClick={handleResearchActive}
             disabled={bulkResearching || researchableCount === 0}
+            className="text-xs bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded-lg transition-colors"
+          >
+            {bulkResearching ? 'Researching…' : `Research Active (${researchableCount})`}
+          </button>
+          <button
+            onClick={handleSaveActive}
+            disabled={savableCount === 0}
             className="text-xs bg-brand-blue hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded-lg transition-colors"
           >
-            {bulkResearching
-              ? 'Researching…'
-              : `Research Active (${researchableCount})`}
+            Save to CMS ({savableCount})
           </button>
         </div>
       </div>
@@ -403,9 +455,10 @@ export default function ScanPage() {
                       </div>
                     </div>
 
-                    {/* Research status + action */}
-                    <div className="flex items-center gap-3 shrink-0">
+                    {/* Research status + actions */}
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                       <StatusPill status={product.researchStatus} />
+
                       {product.researchStatus === 'idle' && (
                         <button
                           onClick={() => researchProduct(product.name)}
@@ -414,14 +467,7 @@ export default function ScanPage() {
                           Research
                         </button>
                       )}
-                      {product.researchStatus === 'done' && (
-                        <Link
-                          href={`/ingest?manufacturer=${encodeURIComponent(manufacturer)}&model=${encodeURIComponent(product.name)}`}
-                          className="text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          View
-                        </Link>
-                      )}
+                      {product.researchStatus === 'loading' && null}
                       {product.researchStatus === 'error' && (
                         <button
                           onClick={() => researchProduct(product.name)}
@@ -429,6 +475,32 @@ export default function ScanPage() {
                         >
                           Retry
                         </button>
+                      )}
+                      {product.researchStatus === 'done' && (
+                        <>
+                          {product.saveStatus === 'idle' && (
+                            <button
+                              onClick={() => saveProduct(product.name)}
+                              className="text-xs bg-brand-blue hover:bg-blue-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Save
+                            </button>
+                          )}
+                          {product.saveStatus === 'saving' && (
+                            <span className="text-xs text-blue-400 animate-pulse px-1">Saving…</span>
+                          )}
+                          {product.saveStatus === 'saved' && (
+                            <span className="text-xs text-emerald-400 font-semibold px-1">✓ Saved</span>
+                          )}
+                          {product.saveStatus === 'error' && (
+                            <button
+                              onClick={() => saveProduct(product.name)}
+                              className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Retry Save
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -439,16 +511,7 @@ export default function ScanPage() {
         })}
       </div>
 
-      {/* Footer action */}
-      <div className="flex gap-3 pt-2 pb-8">
-        <button
-          disabled
-          title="Save to CMS requires database setup"
-          className="flex-1 bg-brand-blue/40 text-blue-300 font-semibold py-3 rounded-xl cursor-not-allowed opacity-60"
-        >
-          Push Active to CMS (coming soon)
-        </button>
-      </div>
+      <div className="pb-8" />
 
     </div>
   )

@@ -119,6 +119,8 @@ export default function IngestPage() {
   const [error, setError] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [copied, setCopied] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   async function handleResearch() {
     if (!manufacturer || !modelName.trim()) return
@@ -139,6 +141,29 @@ export default function IngestPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')
       setStep('input')
+    }
+  }
+
+  async function handleSaveToCms() {
+    if (!result) return
+    setSaveStatus('saving')
+    setSaveError(null)
+    try {
+      const res = await fetch('/api/cms/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manufacturer: result.manufacturer,
+          modelName: result.modelName,
+          product: { ...result.product, canonicalDescription: description },
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setSaveStatus('saved')
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Save failed')
+      setSaveStatus('error')
     }
   }
 
@@ -426,6 +451,11 @@ export default function IngestPage() {
       )}
 
       {/* Actions */}
+      {saveError && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl px-4 py-3">
+          {saveError}
+        </div>
+      )}
       <div className="flex gap-3 pt-2 pb-8">
         <button
           onClick={handleCopyJson}
@@ -434,11 +464,22 @@ export default function IngestPage() {
           {copied ? 'Copied to Clipboard!' : 'Copy as JSON'}
         </button>
         <button
-          disabled
-          title="Save to CMS requires database setup"
-          className="flex-1 bg-brand-blue/40 text-blue-300 font-semibold py-3 rounded-xl cursor-not-allowed opacity-60"
+          onClick={handleSaveToCms}
+          disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+          className={`flex-1 font-semibold py-3 rounded-xl transition-colors ${
+            saveStatus === 'saved'
+              ? 'bg-emerald-500/20 text-emerald-400 cursor-default'
+              : saveStatus === 'saving'
+              ? 'bg-brand-blue/40 text-blue-300 cursor-wait'
+              : saveStatus === 'error'
+              ? 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
+              : 'bg-brand-blue hover:bg-blue-500 text-white'
+          }`}
         >
-          Save to CMS (coming soon)
+          {saveStatus === 'saving' ? 'Saving…'
+            : saveStatus === 'saved' ? 'Saved to CMS'
+            : saveStatus === 'error' ? 'Retry Save'
+            : 'Save to CMS'}
         </button>
       </div>
 
