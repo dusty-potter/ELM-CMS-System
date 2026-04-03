@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { useState } from 'react'
 
@@ -15,6 +15,7 @@ const links = [
 
 export default function Nav() {
   const pathname = usePathname()
+  const router = useRouter()
   const { data: session } = useSession()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -73,6 +74,12 @@ export default function Nav() {
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={() => { setMenuOpen(false); router.push('/account') }}
+                  className="w-full text-left px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  Change Password
+                </button>
                 <button
                   onClick={() => { setMenuOpen(false); signOut({ callbackUrl: '/auth/signin' }) }}
                   className="w-full text-left px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
