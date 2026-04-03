@@ -29,8 +29,10 @@ type ScannedProduct = {
   displayName: string | null
   platform: string | null
   tier: 'premium' | 'advanced' | 'standard' | 'essential' | null
+  availableTiers: string[] | null
   releaseYear: number | null
   formFactorStyles: string[]
+  formFactorRestrictions: string | null
   active: boolean
   researchStatus: ResearchStatus
   researchedData: Record<string, unknown> | null
@@ -116,8 +118,15 @@ export default function ScanPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
 
-      const scanned: ScannedProduct[] = (data.products ?? []).map((p: Omit<ScannedProduct, 'active' | 'researchStatus' | 'researchedData' | 'saveStatus'>) => ({
-        ...p,
+      const scanned: ScannedProduct[] = (data.products ?? []).map((p: Record<string, unknown>) => ({
+        name: p.name as string,
+        displayName: (p.displayName as string) ?? null,
+        platform: (p.platform as string) ?? null,
+        tier: (p.tier as ScannedProduct['tier']) ?? null,
+        availableTiers: (p.availableTiers as string[]) ?? null,
+        releaseYear: (p.releaseYear as number) ?? null,
+        formFactorStyles: (p.formFactorStyles as string[]) ?? [],
+        formFactorRestrictions: (p.formFactorRestrictions as string) ?? null,
         active: true,
         researchStatus: 'idle' as ResearchStatus,
         researchedData: null,
@@ -449,10 +458,16 @@ export default function ScanPage() {
                         {product.formFactorStyles?.length > 0 && (
                           <span className="text-xs text-zinc-600">{product.formFactorStyles.join(' · ')}</span>
                         )}
+                        {product.availableTiers && product.availableTiers.length > 0 && (
+                          <span className="text-xs text-zinc-600">Tiers: {product.availableTiers.join(', ')}</span>
+                        )}
                         {product.releaseYear && (
                           <span className="text-xs text-zinc-600">{product.releaseYear}</span>
                         )}
                       </div>
+                      {product.formFactorRestrictions && (
+                        <p className="text-[10px] text-zinc-600 mt-0.5">{product.formFactorRestrictions}</p>
+                      )}
                     </div>
 
                     {/* Research status + actions */}
