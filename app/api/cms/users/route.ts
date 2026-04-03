@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { UserRole } from '@prisma/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } })

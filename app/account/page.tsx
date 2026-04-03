@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useSession } from 'next-auth/react'
 
+export const dynamic = 'force-dynamic'
+
 export default function AccountPage() {
   const { data: session } = useSession()
   const [current, setCurrent] = useState('')

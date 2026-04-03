@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { slugify } from '@/lib/slugify'
+
+export const dynamic = 'force-dynamic'
 import {
   CapabilityCategory,
   FormFactorStyle,
