@@ -144,9 +144,10 @@ export default function ProductsPage() {
             <div className="text-center py-20 text-zinc-600">No products found.</div>
           ) : (
             filtered.map((p) => (
-              <div
+              <Link
                 key={p.id}
-                className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl px-5 py-4 flex items-center gap-4 transition-colors"
+                href={`/products/${p.id}`}
+                className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl px-5 py-4 flex items-center gap-4 transition-colors block"
               >
                 {/* Status */}
                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${STATUS_STYLES[p.status]}`}>
@@ -185,7 +186,7 @@ export default function ProductsPage() {
                   <span>{p._count.variants} variants</span>
                   <span>{p._count.publications} sites</span>
                 </div>
-              </div>
+              </Link>
             ))
           )}
         </div>
