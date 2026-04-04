@@ -268,7 +268,15 @@ export default function ProductDetailPage() {
 
       {/* Header */}
       <div>
-        <Link href="/products" className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors">← Products</Link>
+        <div className="flex items-center gap-2 text-sm">
+          <Link href="/products" className="text-zinc-500 hover:text-zinc-300 transition-colors">Products</Link>
+          <span className="text-zinc-700">→</span>
+          <Link href={`/platforms/${product.platform.id}`} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+            {product.manufacturer.name} {product.platform.name}
+          </Link>
+          <span className="text-zinc-700">→</span>
+          <span className="text-zinc-400">{product.name}</span>
+        </div>
         <div className="flex items-start justify-between gap-4 mt-3">
           <div>
             <div className="flex items-center gap-3 flex-wrap">

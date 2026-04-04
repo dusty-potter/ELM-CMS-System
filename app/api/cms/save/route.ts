@@ -16,7 +16,7 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const VALID_FF_STYLES = new Set<string>(['RIC', 'BTE', 'ITE', 'CIC', 'IIC', 'miniRITE', 'other'])
+const VALID_FF_STYLES = new Set<string>(['RIC', 'BTE', 'ITE', 'CIC', 'IIC', 'miniRITE', 'slimRIC', 'other'])
 const VALID_BATTERY_TYPES = new Set<string>(['disposable', 'rechargeable'])
 const VALID_CATEGORIES = new Set<string>(['processing', 'connectivity', 'health', 'physical'])
 const VALID_TIERS = new Set<string>(['premium', 'advanced', 'standard', 'essential'])
