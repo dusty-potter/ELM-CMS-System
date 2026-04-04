@@ -46,19 +46,25 @@ export async function uploadImageFromUrl(
   })
 
   return {
-    localUrl: `gs://${BUCKET_NAME}/${gcsPath}`,
+    localUrl: `https://storage.googleapis.com/${BUCKET_NAME}/${gcsPath}`,
     contentType,
   }
 }
 
+/** Extract the GCS object path from either gs:// or https:// URL format */
+function extractGcsPath(localUrl: string): string {
+  return localUrl
+    .replace(`gs://${BUCKET_NAME}/`, '')
+    .replace(`https://storage.googleapis.com/${BUCKET_NAME}/`, '')
+}
+
 /**
  * Generates a short-lived signed URL so the app can serve a GCS file to a browser.
- * Use this in API routes that return image data — never expose the gs:// URL directly.
  */
 export async function signedUrl(localUrl: string, expiresInSeconds = 3600): Promise<string> {
   if (!BUCKET_NAME) throw new Error('GCS_BUCKET_NAME is not configured')
 
-  const gcsPath = localUrl.replace(`gs://${BUCKET_NAME}/`, '')
+  const gcsPath = extractGcsPath(localUrl)
   const [url] = await storage
     .bucket(BUCKET_NAME)
     .file(gcsPath)
@@ -103,11 +109,11 @@ export async function resolveImageRecord(record: Record<string, unknown>): Promi
 }
 
 /**
- * Deletes a file from GCS by its localUrl (gs://... path).
+ * Deletes a file from GCS by its localUrl.
  */
 export async function deleteImage(localUrl: string): Promise<void> {
   if (!BUCKET_NAME) throw new Error('GCS_BUCKET_NAME is not configured')
-  const gcsPath = localUrl.replace(`gs://${BUCKET_NAME}/`, '')
+  const gcsPath = extractGcsPath(localUrl)
   await storage.bucket(BUCKET_NAME).file(gcsPath).delete({ ignoreNotFound: true })
 }
 
@@ -187,7 +193,7 @@ export async function processAndUploadImage(
       contentType: 'image/webp',
       metadata: { cacheControl: 'public, max-age=31536000' },
     })
-    variants.variantHeroWide = `gs://${BUCKET_NAME}/${heroPath}`
+    variants.variantHeroWide = `https://storage.googleapis.com/${BUCKET_NAME}/${heroPath}`
   } catch (e) {
     console.error('Failed to generate hero variant:', e)
   }
@@ -207,7 +213,7 @@ export async function processAndUploadImage(
       contentType: 'image/webp',
       metadata: { cacheControl: 'public, max-age=31536000' },
     })
-    variants.variantSquare = `gs://${BUCKET_NAME}/${squarePath}`
+    variants.variantSquare = `https://storage.googleapis.com/${BUCKET_NAME}/${squarePath}`
   } catch (e) {
     console.error('Failed to generate square variant:', e)
   }
@@ -227,14 +233,14 @@ export async function processAndUploadImage(
       contentType: 'image/webp',
       metadata: { cacheControl: 'public, max-age=31536000' },
     })
-    variants.variantThumbnail = `gs://${BUCKET_NAME}/${thumbPath}`
+    variants.variantThumbnail = `https://storage.googleapis.com/${BUCKET_NAME}/${thumbPath}`
   } catch (e) {
     console.error('Failed to generate thumbnail variant:', e)
   }
 
   return {
     sourceUrl,
-    localUrl: `gs://${BUCKET_NAME}/${originalPath}`,
+    localUrl: `https://storage.googleapis.com/${BUCKET_NAME}/${originalPath}`,
     variantHeroWide: variants.variantHeroWide,
     variantSquare: variants.variantSquare,
     variantThumbnail: variants.variantThumbnail,
