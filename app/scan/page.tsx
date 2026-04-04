@@ -23,6 +23,13 @@ const TIER_ORDER: Record<string, number> = {
 
 type ResearchStatus = 'idle' | 'loading' | 'done' | 'error'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+type ImageStatus = 'idle' | 'storing' | 'stored' | 'error'
+
+type DiscoveredImage = {
+  url: string
+  type: 'hero' | 'gallery'
+  description?: string
+}
 
 type ScannedProduct = {
   name: string
@@ -37,6 +44,8 @@ type ScannedProduct = {
   researchStatus: ResearchStatus
   researchedData: Record<string, unknown> | null
   saveStatus: SaveStatus
+  imageStatus: ImageStatus
+  savedFormFactorIds: string[]
 }
 
 // ── Toggle switch ──────────────────────────────────────────────────────────────
@@ -131,6 +140,8 @@ export default function ScanPage() {
         researchStatus: 'idle' as ResearchStatus,
         researchedData: null,
         saveStatus: 'idle' as SaveStatus,
+        imageStatus: 'idle' as ImageStatus,
+        savedFormFactorIds: [],
       }))
 
       setProducts(scanned)
@@ -196,11 +207,47 @@ export default function ScanPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
       setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, saveStatus: 'saved' } : p)
+        prev.map((p) => p.name === name
+          ? { ...p, saveStatus: 'saved', savedFormFactorIds: data.formFactorIds ?? [] }
+          : p
+        )
       )
     } catch {
       setProducts((prev) =>
         prev.map((p) => p.name === name ? { ...p, saveStatus: 'error' } : p)
+      )
+    }
+  }
+
+  // ── Store images for a saved product ──
+
+  async function storeImages(name: string) {
+    const product = products.find((p) => p.name === name)
+    if (!product?.researchedData || !product.savedFormFactorIds.length) return
+
+    const imageUrls = (product.researchedData.imageUrls as DiscoveredImage[]) ?? []
+    if (imageUrls.length === 0) return
+
+    setProducts((prev) =>
+      prev.map((p) => p.name === name ? { ...p, imageStatus: 'storing' } : p)
+    )
+
+    try {
+      // Store images on the first form factor (primary)
+      const formFactorId = product.savedFormFactorIds[0]
+      const res = await fetch('/api/cms/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formFactorId, images: imageUrls }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Image storage failed')
+      setProducts((prev) =>
+        prev.map((p) => p.name === name ? { ...p, imageStatus: 'stored' } : p)
+      )
+    } catch {
+      setProducts((prev) =>
+        prev.map((p) => p.name === name ? { ...p, imageStatus: 'error' } : p)
       )
     }
   }
@@ -473,6 +520,12 @@ export default function ScanPage() {
                     {/* Research status + actions */}
                     <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                       <StatusPill status={product.researchStatus} />
+                      {product.researchStatus === 'done' && (() => {
+                        const imgCount = ((product.researchedData?.imageUrls as unknown[]) ?? []).length
+                        return imgCount > 0
+                          ? <span className="text-[10px] text-purple-400 font-bold">{imgCount} img</span>
+                          : null
+                      })()}
 
                       {product.researchStatus === 'idle' && (
                         <button
@@ -505,7 +558,41 @@ export default function ScanPage() {
                             <span className="text-xs text-blue-400 animate-pulse px-1">Saving…</span>
                           )}
                           {product.saveStatus === 'saved' && (
-                            <span className="text-xs text-emerald-400 font-semibold px-1">✓ Saved</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-emerald-400 font-semibold px-1">✓ Saved</span>
+                              {/* Image storage buttons */}
+                              {(() => {
+                                const imageUrls = (product.researchedData?.imageUrls as DiscoveredImage[]) ?? []
+                                if (imageUrls.length === 0) return null
+                                if (product.imageStatus === 'idle') {
+                                  return (
+                                    <button
+                                      onClick={() => storeImages(product.name)}
+                                      className="text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                                    >
+                                      Store {imageUrls.length} {imageUrls.length === 1 ? 'Image' : 'Images'}
+                                    </button>
+                                  )
+                                }
+                                if (product.imageStatus === 'storing') {
+                                  return <span className="text-xs text-purple-400 animate-pulse px-1">Storing images…</span>
+                                }
+                                if (product.imageStatus === 'stored') {
+                                  return <span className="text-xs text-purple-400 font-semibold px-1">✓ Images stored</span>
+                                }
+                                if (product.imageStatus === 'error') {
+                                  return (
+                                    <button
+                                      onClick={() => storeImages(product.name)}
+                                      className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                                    >
+                                      Retry Images
+                                    </button>
+                                  )
+                                }
+                                return null
+                              })()}
+                            </div>
                           )}
                           {product.saveStatus === 'error' && (
                             <button

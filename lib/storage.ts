@@ -1,6 +1,7 @@
 import { Storage } from '@google-cloud/storage'
 import path from 'path'
 import { randomUUID } from 'crypto'
+import sharp from 'sharp'
 
 const storage = new Storage() // Uses ADC automatically on Cloud Run; locally run: gcloud auth application-default login
 const BUCKET_NAME = process.env.GCS_BUCKET_NAME
@@ -76,6 +77,137 @@ export async function deleteImage(localUrl: string): Promise<void> {
   if (!BUCKET_NAME) throw new Error('GCS_BUCKET_NAME is not configured')
   const gcsPath = localUrl.replace(`gs://${BUCKET_NAME}/`, '')
   await storage.bucket(BUCKET_NAME).file(gcsPath).delete({ ignoreNotFound: true })
+}
+
+// ---------------------------------------------------------------------------
+// Standard image sizes for the CMS
+// ---------------------------------------------------------------------------
+
+export const IMAGE_SIZES = {
+  hero:      { width: 1200, height: 800 },   // 3:2 hero banner
+  square:    { width: 600,  height: 600 },    // 1:1 product card
+  thumbnail: { width: 300,  height: 300 },    // 1:1 small thumbnail
+} as const
+
+/**
+ * Downloads an image, processes it into standard sizes, converts to webp,
+ * and uploads all variants to GCS.
+ *
+ * Returns paths for all generated variants.
+ */
+export async function processAndUploadImage(
+  sourceUrl: string,
+  folder: string,
+  options?: { filename?: string; type?: 'hero' | 'gallery' },
+): Promise<{
+  sourceUrl: string
+  localUrl: string
+  variantHeroWide: string | null
+  variantSquare: string | null
+  variantThumbnail: string | null
+  contentType: string
+}> {
+  if (!BUCKET_NAME) throw new Error('GCS_BUCKET_NAME is not configured')
+
+  // Fetch the source image
+  const fetchRes = await fetch(sourceUrl, {
+    headers: { 'User-Agent': 'ELM-CMS-Bot/1.0 (image-download)' },
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!fetchRes.ok) {
+    throw new Error(`Failed to fetch image from ${sourceUrl}: ${fetchRes.statusText}`)
+  }
+
+  const buffer = Buffer.from(await fetchRes.arrayBuffer())
+  const baseName = options?.filename ?? randomUUID()
+  const bucket = storage.bucket(BUCKET_NAME)
+
+  // Process and upload the original as webp (full quality)
+  const originalWebp = await sharp(buffer)
+    .webp({ quality: 85 })
+    .toBuffer()
+
+  const originalPath = `${folder}/${baseName}-original.webp`
+  await bucket.file(originalPath).save(originalWebp, {
+    contentType: 'image/webp',
+    metadata: { cacheControl: 'public, max-age=31536000' },
+  })
+
+  // Generate variants
+  const variants: Record<string, string | null> = {
+    variantHeroWide: null,
+    variantSquare: null,
+    variantThumbnail: null,
+  }
+
+  // Hero wide (3:2, cover crop)
+  try {
+    const heroBuffer = await sharp(buffer)
+      .resize(IMAGE_SIZES.hero.width, IMAGE_SIZES.hero.height, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({ quality: 82 })
+      .toBuffer()
+
+    const heroPath = `${folder}/${baseName}-hero.webp`
+    await bucket.file(heroPath).save(heroBuffer, {
+      contentType: 'image/webp',
+      metadata: { cacheControl: 'public, max-age=31536000' },
+    })
+    variants.variantHeroWide = `gs://${BUCKET_NAME}/${heroPath}`
+  } catch (e) {
+    console.error('Failed to generate hero variant:', e)
+  }
+
+  // Square (1:1, cover crop)
+  try {
+    const squareBuffer = await sharp(buffer)
+      .resize(IMAGE_SIZES.square.width, IMAGE_SIZES.square.height, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({ quality: 80 })
+      .toBuffer()
+
+    const squarePath = `${folder}/${baseName}-square.webp`
+    await bucket.file(squarePath).save(squareBuffer, {
+      contentType: 'image/webp',
+      metadata: { cacheControl: 'public, max-age=31536000' },
+    })
+    variants.variantSquare = `gs://${BUCKET_NAME}/${squarePath}`
+  } catch (e) {
+    console.error('Failed to generate square variant:', e)
+  }
+
+  // Thumbnail (1:1, small)
+  try {
+    const thumbBuffer = await sharp(buffer)
+      .resize(IMAGE_SIZES.thumbnail.width, IMAGE_SIZES.thumbnail.height, {
+        fit: 'cover',
+        position: 'centre',
+      })
+      .webp({ quality: 75 })
+      .toBuffer()
+
+    const thumbPath = `${folder}/${baseName}-thumb.webp`
+    await bucket.file(thumbPath).save(thumbBuffer, {
+      contentType: 'image/webp',
+      metadata: { cacheControl: 'public, max-age=31536000' },
+    })
+    variants.variantThumbnail = `gs://${BUCKET_NAME}/${thumbPath}`
+  } catch (e) {
+    console.error('Failed to generate thumbnail variant:', e)
+  }
+
+  return {
+    sourceUrl,
+    localUrl: `gs://${BUCKET_NAME}/${originalPath}`,
+    variantHeroWide: variants.variantHeroWide,
+    variantSquare: variants.variantSquare,
+    variantThumbnail: variants.variantThumbnail,
+    contentType: 'image/webp',
+  }
 }
 
 function extensionFromContentType(contentType: string): string {

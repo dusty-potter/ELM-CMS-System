@@ -214,6 +214,7 @@ export async function POST(req: NextRequest) {
 
     // ── 6. Form factors + their capability declarations ──────────────────────
     const formFactors = (product.formFactors as Array<Record<string, unknown>>) ?? []
+    const savedFormFactorIds: string[] = []
     for (const ff of formFactors) {
       const ffName = (ff.name as string) ?? 'Unknown'
       const ffSlug = slugify(ffName)
@@ -256,6 +257,8 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      savedFormFactorIds.push(formFactor.id)
+
       // Declare all product-level capabilities on this form factor
       for (const declarationId of Object.values(declarationIdByCapabilityId)) {
         await prisma.formFactorCapabilityDeclaration.upsert({
@@ -280,6 +283,7 @@ export async function POST(req: NextRequest) {
       platformId: platform.id,
       manufacturerId: manufacturer.id,
       slug: productSlug,
+      formFactorIds: savedFormFactorIds,
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Database save failed'

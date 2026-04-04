@@ -98,7 +98,8 @@ CRITICAL RULES:
 - Tier levels (e.g. 7/5/3 or 90/70/50) are performance tiers of the SAME product, not different products
 - Form factors are physical device styles (RIC, BTE, CIC, etc.) — list ALL that this model comes in
 - Do NOT confabulate: if you don't know a specific detail, set it to null
-- Do NOT mix up platforms between manufacturers (e.g. "IX" is Signia, "Infinio" is Phonak)${webContext}
+- Do NOT mix up platforms between manufacturers (e.g. "IX" is Signia, "Infinio" is Phonak)
+- FIND IMAGE URLs: Look for product image URLs in the web content. These are typically .jpg, .png, or .webp files on the manufacturer's CDN or website. Include hero/product shots and gallery images. Only include HTTPS URLs from the manufacturer's domain. Do NOT guess or fabricate image URLs.${webContext}
 
 Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
 {
@@ -146,6 +147,13 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
       "connectivityAndroid": true or false,
       "connectivityBluetooth": true or false,
       "connectivityHandsFree": true or false
+    }
+  ],
+  "imageUrls": [
+    {
+      "url": "full absolute URL to a product image on the manufacturer's website (must be https)",
+      "type": "hero or gallery",
+      "description": "brief description of what the image shows, e.g. 'product hero shot', 'close-up of RIC style in silver', 'lifestyle image'"
     }
   ],
   "compSpeechInNoise": "low, medium, or high — relative to this product tier, or null",
