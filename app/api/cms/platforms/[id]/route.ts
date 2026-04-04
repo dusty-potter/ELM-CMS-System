@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { resolveImageUrl, resolveImageRecord } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,7 +49,33 @@ export async function GET(
       },
     })
 
-    return NextResponse.json({ ...platform, _publishedSiteCount: publishedCount })
+    // Resolve gs:// image URLs to signed URLs for the browser
+    const resolvedManufacturer = {
+      ...platform.manufacturer,
+      logoUrl: await resolveImageUrl(platform.manufacturer.logoUrl),
+    }
+    const resolvedImages = await Promise.all(
+      platform.images.map(img => resolveImageRecord(img))
+    )
+    const resolvedProducts = await Promise.all(
+      platform.products.map(async (product) => ({
+        ...product,
+        formFactors: await Promise.all(
+          product.formFactors.map(async (ff) => ({
+            ...ff,
+            images: await Promise.all(ff.images.map(img => resolveImageRecord(img))),
+          }))
+        ),
+      }))
+    )
+
+    return NextResponse.json({
+      ...platform,
+      manufacturer: resolvedManufacturer,
+      images: resolvedImages,
+      products: resolvedProducts,
+      _publishedSiteCount: publishedCount,
+    })
   } catch (e) {
     console.error('Platform fetch error:', e)
     return NextResponse.json({ error: 'Failed to fetch platform' }, { status: 500 })

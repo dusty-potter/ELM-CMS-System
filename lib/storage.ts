@@ -71,6 +71,38 @@ export async function signedUrl(localUrl: string, expiresInSeconds = 3600): Prom
 }
 
 /**
+ * Resolves a gs:// URL to a signed URL, or returns the input if it's already an http(s) URL.
+ * Returns null for null/undefined inputs.
+ */
+export async function resolveImageUrl(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  if (url.startsWith('gs://')) {
+    try {
+      return await signedUrl(url, 3600)
+    } catch {
+      return null
+    }
+  }
+  return url
+}
+
+/**
+ * Resolves all image URLs in an object that has standard image fields.
+ * Works on FormFactorImage and PlatformImage shapes.
+ */
+export async function resolveImageRecord(record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const result = { ...record }
+  const fields = ['localUrl', 'variantHeroWide', 'variantSquare', 'variantThumbnail']
+  for (const field of fields) {
+    if (field in result && typeof result[field] === 'string') {
+      result[field] = await resolveImageUrl(result[field] as string)
+    }
+  }
+  return result
+}
+
+/**
  * Deletes a file from GCS by its localUrl (gs://... path).
  */
 export async function deleteImage(localUrl: string): Promise<void> {
