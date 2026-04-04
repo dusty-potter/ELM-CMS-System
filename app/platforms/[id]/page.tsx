@@ -71,6 +71,126 @@ const CAP_CATEGORY_STYLES: Record<string, string> = {
 // Main page
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Manufacturer Logo + Platform Images section
+// ---------------------------------------------------------------------------
+
+function ManufacturerLogoAndImages({
+  manufacturer,
+  images,
+  onUpdated,
+}: {
+  manufacturer: { id: string; name: string; logoUrl: string | null }
+  images: Array<{ id: string; type: string; localUrl: string; variantHeroWide: string | null; variantSquare: string | null; variantThumbnail: string | null; sortOrder: number }>
+  onUpdated: () => void
+}) {
+  const [logoInput, setLogoInput] = useState(false)
+  const [logoUrl, setLogoUrl] = useState('')
+  const [logoSaving, setLogoSaving] = useState(false)
+
+  async function saveLogo() {
+    if (!logoUrl.trim()) return
+    setLogoSaving(true)
+    try {
+      const res = await fetch('/api/cms/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manufacturerId: manufacturer.id,
+          isLogo: true,
+          images: [{ url: logoUrl.trim(), type: 'hero' }],
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setLogoInput(false)
+      setLogoUrl('')
+      onUpdated()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save logo')
+    } finally {
+      setLogoSaving(false)
+    }
+  }
+
+  return (
+    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+      <div className="flex items-start gap-6">
+        {/* Logo */}
+        <div className="shrink-0">
+          <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Manufacturer Logo</label>
+          {manufacturer.logoUrl ? (
+            <div className="group relative">
+              <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                <img src={manufacturer.logoUrl} alt={manufacturer.name} className="w-full h-full object-contain p-2" />
+              </div>
+              <button
+                onClick={() => setLogoInput(true)}
+                className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-zinc-300"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setLogoInput(true)}
+              className="w-20 h-20 rounded-xl border-2 border-dashed border-zinc-700 hover:border-zinc-500 flex items-center justify-center text-zinc-600 hover:text-zinc-400 transition-colors"
+            >
+              <span className="text-[10px] text-center leading-tight">Set<br/>Logo</span>
+            </button>
+          )}
+          {logoInput && (
+            <div className="mt-2 space-y-1.5 w-56">
+              <input
+                type="url"
+                value={logoUrl}
+                onChange={e => setLogoUrl(e.target.value)}
+                placeholder="Paste logo image URL…"
+                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-brand-blue"
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') saveLogo() }}
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={saveLogo}
+                  disabled={logoSaving || !logoUrl.trim()}
+                  className="text-[10px] bg-brand-blue hover:bg-blue-500 disabled:opacity-50 text-white font-semibold px-3 py-1 rounded-lg transition-colors"
+                >
+                  {logoSaving ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => { setLogoInput(false); setLogoUrl('') }}
+                  className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-3 py-1 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Platform images */}
+        {images.length > 0 && (
+          <div className="flex-1">
+            <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Platform Images ({images.length})</label>
+            <div className="flex gap-3 overflow-x-auto">
+              {images.map(img => (
+                <div key={img.id} className="shrink-0 w-32 h-24 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                  <img src={img.variantHeroWide || img.localUrl} alt="" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
 export default function PlatformDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -308,32 +428,11 @@ export default function PlatformDetailPage() {
       )}
 
       {/* Manufacturer Logo + Platform Images */}
-      {(platform.manufacturer.logoUrl || platform.images.length > 0) && (
-        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
-          <div className="flex items-start gap-6">
-            {platform.manufacturer.logoUrl && (
-              <div className="shrink-0">
-                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Manufacturer</label>
-                <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
-                  <img src={platform.manufacturer.logoUrl} alt={platform.manufacturer.name} className="w-full h-full object-contain p-2" />
-                </div>
-              </div>
-            )}
-            {platform.images.length > 0 && (
-              <div className="flex-1">
-                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Platform Images ({platform.images.length})</label>
-                <div className="flex gap-3 overflow-x-auto">
-                  {platform.images.map(img => (
-                    <div key={img.id} className="shrink-0 w-32 h-24 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
-                      <img src={img.variantHeroWide || img.localUrl} alt="" className="w-full h-full object-cover" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+      <ManufacturerLogoAndImages
+        manufacturer={platform.manufacturer}
+        images={platform.images}
+        onUpdated={fetchPlatform}
+      />
 
       {/* Platform Summary */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
