@@ -98,6 +98,28 @@ export async function runStage2(intakeId: string): Promise<Stage2Result> {
 
     await updatePipelineRun(intakeId, { stageLogs, currentStage: 1 })
 
+    // Diagnostic: verify PAT can access the template repo before attempting generate
+    let templateAccessible = false
+    try {
+      const diagRes = await ghFetch(`/repos/${TEMPLATE_OWNER}/${TEMPLATE_REPO}`)
+      const diagData = await diagRes.json()
+      console.log(`[pipeline] Template repo check: 200 OK, is_template=${diagData.is_template}, private=${diagData.private}`)
+      templateAccessible = true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[pipeline] Template repo check FAILED:`, msg)
+      // Log diagnostic to stageLogs so it's visible in the UI
+      stageLogs.push({
+        stage: 2,
+        name: 'Template repo diagnostic',
+        status: 'failed',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        error: `Cannot access template repo: ${msg}`,
+      })
+      await updatePipelineRun(intakeId, { stageLogs })
+    }
+
     try {
       await ghFetch(`/repos/${TEMPLATE_OWNER}/${TEMPLATE_REPO}/generate`, {
         method: 'POST',
