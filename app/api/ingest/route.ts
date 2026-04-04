@@ -159,7 +159,7 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no expla
 
   try {
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6-20250514',
+      model: 'claude-sonnet-4-5-20241022',
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     })
