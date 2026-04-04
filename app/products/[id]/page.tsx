@@ -296,7 +296,7 @@ export default function ProductDetailPage() {
               {product.confidenceLevel && <> · <span className="text-zinc-600">{product.confidenceLevel} confidence</span></>}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 flex-wrap justify-end">
             {product.status === 'draft' && (
               <button
                 onClick={() => patchProduct({ status: 'approved' })}
@@ -315,13 +315,46 @@ export default function ProductDetailPage() {
                 Publish
               </button>
             )}
-            {product.status !== 'draft' && (
+            {(product.status === 'published' || product.status === 'approved') && (
+              <button
+                onClick={() => {
+                  if (confirm('This will unpublish from all sites and retire this product. Continue?'))
+                    patchProduct({ status: 'retired' })
+                }}
+                disabled={saving}
+                className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Retire
+              </button>
+            )}
+            {product.status === 'retired' && (
               <button
                 onClick={() => patchProduct({ status: 'draft' })}
                 disabled={saving}
-                className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+                className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
               >
-                Revert to Draft
+                Reactivate
+              </button>
+            )}
+            {product.status !== 'published' && product.status !== 'approved' && (
+              <button
+                onClick={async () => {
+                  if (!confirm('Permanently delete this product and all its data? This cannot be undone.')) return
+                  setSaving(true)
+                  try {
+                    const res = await fetch(`/api/cms/products/${id}`, { method: 'DELETE' })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error)
+                    router.push(`/platforms/${product.platform.id}`)
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : 'Delete failed')
+                    setSaving(false)
+                  }
+                }}
+                disabled={saving}
+                className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+              >
+                Delete
               </button>
             )}
           </div>

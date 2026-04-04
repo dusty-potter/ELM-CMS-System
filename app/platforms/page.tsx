@@ -42,8 +42,9 @@ export default function PlatformsPage() {
     )
   }
 
-  const active = platforms.filter(p => !p.isLegacy)
-  const legacy = platforms.filter(p => p.isLegacy)
+  const active = platforms.filter(p => !p.isLegacy && p.status !== 'retired')
+  const legacy = platforms.filter(p => p.isLegacy && p.status !== 'retired')
+  const retired = platforms.filter(p => p.status === 'retired')
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
@@ -103,6 +104,29 @@ export default function PlatformsPage() {
                   <span className="text-sm font-bold text-white">{p.manufacturer.name} {p.displayName || p.name}</span>
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-zinc-700 text-zinc-400 border border-zinc-600">
                     Legacy
+                  </span>
+                  {p.generationYear && <span className="text-xs text-zinc-600">{p.generationYear}</span>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {retired.length > 0 && (
+        <div>
+          <h2 className="text-sm font-bold text-zinc-600 uppercase tracking-wider mb-3">Retired</h2>
+          <div className="space-y-2">
+            {retired.map(p => (
+              <Link
+                key={p.id}
+                href={`/platforms/${p.id}`}
+                className="block bg-zinc-900/50 border border-red-500/10 rounded-2xl px-6 py-3 opacity-40 hover:opacity-60 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-white">{p.manufacturer.name} {p.displayName || p.name}</span>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                    Retired
                   </span>
                   {p.generationYear && <span className="text-xs text-zinc-600">{p.generationYear}</span>}
                 </div>
