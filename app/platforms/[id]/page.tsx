@@ -211,7 +211,7 @@ export default function PlatformDetailPage() {
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-white">
-                {platform.manufacturer.name} {platform.displayName || platform.name}
+                {platform.displayName || `${platform.manufacturer.name} ${platform.name}`}
               </h1>
               <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${STATUS_STYLES[platform.status]}`}>
                 {platform.status}

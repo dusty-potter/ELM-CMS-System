@@ -8,7 +8,7 @@ export async function GET() {
     const products = await prisma.product.findMany({
       include: {
         manufacturer: { select: { name: true } },
-        platform: { select: { name: true } },
+        platform: { select: { id: true, name: true } },
         formFactors: { select: { id: true, style: true, name: true, status: true } },
         _count: { select: { variants: true, publications: true } },
       },

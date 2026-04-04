@@ -219,7 +219,7 @@ export async function POST(req: NextRequest) {
         const productRecord = await tx.product.upsert({
           where: { slug: productSlug },
           update: {
-            displayName: `${manufacturerName} ${platformData.name} ${tier.label}`,
+            displayName: `${manufacturerName} ${tier.label}`,
             tier: toTier(tier.tier),
             canonicalDescription: (tierResearch.canonicalDescription as string) ?? null,
             bestFor: (tierResearch.bestFor as string[]) ?? [],
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
             platformId: platform.id,
             manufacturerId: manufacturer.id,
             name: tier.label,
-            displayName: `${manufacturerName} ${platformData.name} ${tier.label}`,
+            displayName: `${manufacturerName} ${tier.label}`,
             slug: productSlug,
             tier: toTier(tier.tier),
             status: 'draft',
