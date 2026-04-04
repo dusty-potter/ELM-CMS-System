@@ -47,6 +47,7 @@ enum UserRole {
   admin
   editor
   viewer
+  operator
 }
 
 // Functional grouping for platform capabilities.
@@ -689,4 +690,59 @@ model SitePublication {
 
   @@unique([siteId, productId])
   @@map("site_publications")
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline Status
+// ---------------------------------------------------------------------------
+
+enum PipelineStatus {
+  running
+  awaiting_review
+  in_revision
+  awaiting_client
+  approved
+  live
+  failed
+}
+
+// ---------------------------------------------------------------------------
+// Client Intake
+// ---------------------------------------------------------------------------
+
+model ClientIntake {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  payload     Json
+  intakeBy    String
+  createdAt   DateTime     @default(now())
+  pipelineRun PipelineRun?
+
+  @@map("client_intakes")
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline Run
+// ---------------------------------------------------------------------------
+
+model PipelineRun {
+  id             String         @id @default(cuid())
+  intake         ClientIntake   @relation(fields: [intakeId], references: [id])
+  intakeId       String         @unique
+  currentStage   Int            @default(0)
+  stageLogs      Json
+  buildDocument  String?
+  stagingUrl     String?
+  mondayItemId   String?
+  ghlContactId   String?
+  auditScores    Json?
+  auditFixList   String?
+  approved       Boolean        @default(false)
+  clientApproved Boolean        @default(false)
+  liveUrl        String?
+  status         PipelineStatus @default(running)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@map("pipeline_runs")
 }
