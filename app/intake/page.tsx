@@ -114,7 +114,7 @@ function IntakePageContent() {
       const res = await fetch('/api/intake', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, _resumeSlug: resumeSlug || undefined }),
       })
       const json = await res.json()
 
