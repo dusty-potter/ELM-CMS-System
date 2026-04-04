@@ -10,12 +10,18 @@ import Link from 'next/link'
 
 type Capability = { id: string; key: string; label: string; category: string; description: string | null }
 type DeclaredCapability = { id: string; confirmed: boolean; capability: Capability }
+type FormFactorImage = {
+  id: string; type: string; sourceUrl: string; localUrl: string
+  variantHeroWide: string | null; variantSquare: string | null; variantThumbnail: string | null
+  sortOrder: number
+}
 type FormFactor = {
   id: string; style: string; name: string; slug: string; status: string
   batteryType: string | null; batterySize: string | null; batteryEstimatedHours: number | null
   ipRating: string | null; waterResistant: boolean; colors: string[]
   connectivityIos: boolean; connectivityAndroid: boolean
   connectivityBluetooth: boolean; connectivityHandsFree: boolean
+  images: FormFactorImage[]
 }
 type Variant = { id: string; text: string; status: string; scope: string; aiGenerated: boolean; createdAt: string }
 type Publication = { id: string; status: string; site: { id: string; name: string; domain: string } }
@@ -198,6 +204,219 @@ function EditableList({
         </button>
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Form Factors section with per-FF image search
+// ---------------------------------------------------------------------------
+
+type FFImageCandidate = { url: string; status: 'pending' | 'approved' | 'rejected' }
+
+function FormFactorsSection({
+  formFactors, manufacturer, onImagesUpdated,
+}: {
+  formFactors: FormFactor[]; manufacturer: string; onImagesUpdated: () => void
+}) {
+  const [searchingFF, setSearchingFF] = useState<string | null>(null)
+  const [storingFF, setStoringFF] = useState<string | null>(null)
+  const [candidates, setCandidates] = useState<Record<string, FFImageCandidate[]>>({})
+  const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set())
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  async function searchImages(ff: FormFactor) {
+    setSearchingFF(ff.id)
+    try {
+      const res = await fetch('/api/cms/images/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer, query: ff.name }),
+      })
+      const data = await res.json()
+      if (data.images?.length > 0) {
+        const existing = new Set((candidates[ff.id] ?? []).map(c => c.url))
+        const newCandidates = data.images
+          .filter((img: { url: string }) => !existing.has(img.url))
+          .map((img: { url: string }) => ({ url: img.url, status: 'pending' as const }))
+        setCandidates(prev => ({
+          ...prev,
+          [ff.id]: [...(prev[ff.id] ?? []), ...newCandidates],
+        }))
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSearchingFF(null)
+    }
+  }
+
+  async function storeApproved(ff: FormFactor) {
+    const approved = (candidates[ff.id] ?? []).filter(c => c.status === 'approved')
+    if (approved.length === 0) return
+
+    setStoringFF(ff.id)
+    try {
+      const res = await fetch('/api/cms/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formFactorId: ff.id,
+          images: approved.map(c => ({ url: c.url, type: 'gallery' })),
+        }),
+      })
+      if (res.ok) {
+        setCandidates(prev => ({ ...prev, [ff.id]: [] }))
+        onImagesUpdated()
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setStoringFF(null)
+    }
+  }
+
+  function updateCandidate(ffId: string, url: string, status: FFImageCandidate['status']) {
+    setCandidates(prev => ({
+      ...prev,
+      [ffId]: (prev[ffId] ?? []).map(c => c.url === url ? { ...c, status } : c),
+    }))
+  }
+
+  return (
+    <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+      <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">
+        Form Factors ({formFactors.length})
+      </h2>
+      {formFactors.length === 0 ? (
+        <p className="text-sm text-zinc-600 italic">No form factors yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {formFactors.map((ff) => {
+            const ffCandidates = candidates[ff.id] ?? []
+            const pending = ffCandidates.filter(c => c.status === 'pending')
+            const approved = ffCandidates.filter(c => c.status === 'approved')
+            const isSearching = searchingFF === ff.id
+            const isStoring = storingFF === ff.id
+
+            return (
+              <div key={ff.id} className="bg-zinc-800/50 rounded-xl px-4 py-3 space-y-3">
+                {/* FF header */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="font-semibold text-white text-sm">{ff.name}</span>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-zinc-700 text-zinc-400">{ff.style}</span>
+                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${STATUS_STYLES[ff.status]}`}>{ff.status}</span>
+                    {ff.images.length > 0 && (
+                      <span className="text-[10px] text-purple-400">{ff.images.length} img</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => searchImages(ff)}
+                    disabled={isSearching}
+                    className="text-[10px] bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 px-3 py-1 rounded-lg transition-colors shrink-0"
+                  >
+                    {isSearching ? 'Searching…' : 'Find Images'}
+                  </button>
+                </div>
+
+                {/* FF specs */}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+                  {ff.batteryType && <span>Battery: {ff.batteryType}{ff.batterySize ? ` (${ff.batterySize})` : ''}</span>}
+                  {ff.batteryEstimatedHours && <span>{ff.batteryEstimatedHours}h battery life</span>}
+                  {ff.ipRating && <span>{ff.ipRating}</span>}
+                  {ff.waterResistant && <span>Water resistant</span>}
+                  {ff.colors.length > 0 && <span>{ff.colors.length} colors</span>}
+                </div>
+                <div className="flex gap-3">
+                  {ff.connectivityBluetooth && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded">Bluetooth</span>}
+                  {ff.connectivityIos && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">iOS</span>}
+                  {ff.connectivityAndroid && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">Android</span>}
+                  {ff.connectivityHandsFree && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">Hands-free</span>}
+                </div>
+
+                {/* Existing stored images */}
+                {ff.images.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {ff.images.map(img => (
+                      <div key={img.id} className="w-16 h-16 rounded-lg overflow-hidden bg-zinc-950 border border-zinc-700">
+                        <img src={img.variantThumbnail || img.localUrl} alt={ff.name} className="w-full h-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Image candidates — pending review */}
+                {pending.length > 0 && (
+                  <div>
+                    <div className="text-[9px] font-bold text-amber-400 uppercase tracking-wider mb-1">Review ({pending.length})</div>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                      {pending.map(c => (
+                        <div key={c.url} className="relative group rounded-lg overflow-hidden border border-zinc-700 bg-zinc-950">
+                          <div className="aspect-square">
+                            {brokenUrls.has(c.url) ? (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-700 text-[9px]">N/A</div>
+                            ) : (
+                              <img src={c.url} alt="" className="w-full h-full object-cover cursor-pointer"
+                                referrerPolicy="no-referrer"
+                                onClick={() => setPreviewUrl(c.url)}
+                                onError={() => setBrokenUrls(prev => new Set(prev).add(c.url))} />
+                            )}
+                          </div>
+                          <div className="absolute top-0 left-0 right-0 flex justify-between p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!brokenUrls.has(c.url) && (
+                              <button onClick={() => updateCandidate(ff.id, c.url, 'approved')}
+                                className="w-5 h-5 bg-emerald-500/90 hover:bg-emerald-500 rounded-full text-white text-[10px] flex items-center justify-center">✓</button>
+                            )}
+                            <button onClick={() => updateCandidate(ff.id, c.url, 'rejected')}
+                              className="w-5 h-5 bg-red-500/70 hover:bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center ml-auto">✕</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Approved — ready to store */}
+                {approved.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex gap-1">
+                      {approved.map(c => (
+                        <div key={c.url} className="w-10 h-10 rounded border border-emerald-500/30 overflow-hidden">
+                          <img src={c.url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => storeApproved(ff)}
+                      disabled={isStoring}
+                      className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-50 text-emerald-400 font-semibold px-3 py-1 rounded-lg transition-colors"
+                    >
+                      {isStoring ? 'Storing…' : `Store ${approved.length} Image${approved.length > 1 ? 's' : ''}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Preview modal */}
+      {previewUrl && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-8 cursor-pointer"
+          onClick={() => setPreviewUrl(null)}>
+          <div className="relative max-w-4xl max-h-full" onClick={e => e.stopPropagation()}>
+            <img src={previewUrl} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl" referrerPolicy="no-referrer" />
+            <button onClick={() => setPreviewUrl(null)}
+              className="absolute top-2 right-2 w-8 h-8 bg-black/60 hover:bg-black/80 rounded-full text-white flex items-center justify-center">✕</button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -463,43 +682,11 @@ export default function ProductDetailPage() {
       )}
 
       {/* Form Factors */}
-      <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
-        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-          Form Factors ({product.formFactors.length})
-        </h2>
-        {product.formFactors.length === 0 ? (
-          <p className="text-sm text-zinc-600 italic">No form factors yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {product.formFactors.map((ff) => (
-              <div key={ff.id} className="bg-zinc-800/50 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-semibold text-white text-sm">{ff.name}</span>
-                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-zinc-700 text-zinc-400">
-                    {ff.style}
-                  </span>
-                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${STATUS_STYLES[ff.status]}`}>
-                    {ff.status}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-zinc-500">
-                  {ff.batteryType && <span>Battery: {ff.batteryType}{ff.batterySize ? ` (${ff.batterySize})` : ''}</span>}
-                  {ff.batteryEstimatedHours && <span>{ff.batteryEstimatedHours}h battery life</span>}
-                  {ff.ipRating && <span>{ff.ipRating}</span>}
-                  {ff.waterResistant && <span>Water resistant</span>}
-                  {ff.colors.length > 0 && <span>{ff.colors.length} colors</span>}
-                </div>
-                <div className="flex gap-3 mt-2">
-                  {ff.connectivityBluetooth && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded">Bluetooth</span>}
-                  {ff.connectivityIos && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">iOS</span>}
-                  {ff.connectivityAndroid && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">Android</span>}
-                  {ff.connectivityHandsFree && <span className="text-[10px] bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded">Hands-free</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <FormFactorsSection
+        formFactors={product.formFactors}
+        manufacturer={product.manufacturer.name}
+        onImagesUpdated={fetchProduct}
+      />
 
       {/* Content Variants */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
