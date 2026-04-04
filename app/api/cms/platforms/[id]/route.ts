@@ -145,9 +145,17 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
-      // Delete all products under this platform (cascades form factors, variants, publications, declarations)
+      // Must delete in order to respect RESTRICT constraints:
+      // 1. FF capability declarations & exclusions (RESTRICT on ProductCapabilityDeclaration)
+      await tx.formFactorCapabilityDeclaration.deleteMany({
+        where: { formFactor: { product: { platformId: id } } },
+      })
+      await tx.formFactorCapabilityExclusion.deleteMany({
+        where: { formFactor: { product: { platformId: id } } },
+      })
+      // 2. Products (cascades: ProductCapDecls, FormFactors, Variants, Publications)
       await tx.product.deleteMany({ where: { platformId: id } })
-      // Now delete the platform (cascades fitting options, capabilities)
+      // 3. Platform (cascades: FittingOptions, PlatformCapabilities)
       await tx.platform.delete({ where: { id } })
     })
 
