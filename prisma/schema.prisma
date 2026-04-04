@@ -704,6 +704,14 @@ enum PipelineStatus {
   approved
   live
   failed
+  on_hold
+  revision_requested
+}
+
+enum RevisionStatus {
+  pending
+  in_progress
+  resolved
 }
 
 // ---------------------------------------------------------------------------
@@ -743,6 +751,24 @@ model PipelineRun {
   status         PipelineStatus @default(running)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  revisions      Revision[]
 
   @@map("pipeline_runs")
+}
+
+// ---------------------------------------------------------------------------
+// Revision
+// ---------------------------------------------------------------------------
+
+model Revision {
+  id            String         @id @default(cuid())
+  pipelineRun   PipelineRun    @relation(fields: [pipelineRunId], references: [id])
+  pipelineRunId String
+  requestText   String
+  submittedBy   String
+  resolvedAt    DateTime?
+  status        RevisionStatus @default(pending)
+  createdAt     DateTime       @default(now())
+
+  @@map("revisions")
 }

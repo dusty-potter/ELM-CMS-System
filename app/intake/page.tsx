@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import IntakeStepper from './components/IntakeStepper'
 import Section0SiteScan from './components/Section0SiteScan'
 import Section1BusinessInfo from './components/Section1BusinessInfo'
@@ -60,13 +60,39 @@ const INITIAL_DATA: IntakeData = {
 // ---------------------------------------------------------------------------
 
 export default function IntakePage() {
+  return (
+    <Suspense>
+      <IntakePageContent />
+    </Suspense>
+  )
+}
+
+function IntakePageContent() {
   const router = useRouter()
-  const [section, setSection] = useState(0)
+  const searchParams = useSearchParams()
+  const resumeSlug = searchParams.get('resume')
+  const [section, setSection] = useState(resumeSlug ? 1 : 0)
   const [data, setData] = useState<IntakeData>(INITIAL_DATA)
   const [launching, setLaunching] = useState(false)
+  const [resumeLoading, setResumeLoading] = useState(!!resumeSlug)
   const [launchResult, setLaunchResult] = useState<{ success: boolean; message: string } | null>(
     null
   )
+
+  // Resume flow: pre-populate from saved intake
+  useEffect(() => {
+    if (!resumeSlug) return
+    fetch(`/api/sites/${resumeSlug}`)
+      .then((r) => r.json())
+      .then((intake) => {
+        if (intake.payload) {
+          const p = intake.payload as Partial<IntakeData>
+          setData((prev) => ({ ...prev, ...p }))
+        }
+      })
+      .catch(() => {}) // silently fail — user can fill manually
+      .finally(() => setResumeLoading(false))
+  }, [resumeSlug])
 
   function updateData(partial: Partial<IntakeData>) {
     setData((prev) => ({ ...prev, ...partial }))
@@ -106,6 +132,15 @@ export default function IntakePage() {
     } finally {
       setLaunching(false)
     }
+  }
+
+  // Show loading state for resume
+  if (resumeLoading) {
+    return (
+      <div className="flex justify-center py-20">
+        <div className="w-8 h-8 border-4 border-zinc-700 border-t-brand-blue rounded-full animate-spin" />
+      </div>
+    )
   }
 
   // Show success state after launch

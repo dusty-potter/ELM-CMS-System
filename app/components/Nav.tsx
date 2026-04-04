@@ -12,6 +12,7 @@ const ROLE_LINKS: Record<string, NavLink[]> = {
     { href: '/platforms', label: 'Platforms' },
     { href: '/manufacturers', label: 'Brands' },
     { href: '/sites', label: 'Sites' },
+    { href: '/cms/sites', label: 'CMS Sites' },
     { href: '/users', label: 'Users' },
     { href: '/scan', label: 'Scan Lineup' },
     { href: '/ingest', label: 'Research' },
