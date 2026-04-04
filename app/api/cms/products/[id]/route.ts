@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { resolveImageRecord } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +42,15 @@ export async function GET(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
 
-    return NextResponse.json(product)
+    // Resolve gs:// image URLs to signed URLs
+    const resolvedFormFactors = await Promise.all(
+      product.formFactors.map(async (ff) => ({
+        ...ff,
+        images: await Promise.all((ff.images || []).map(img => resolveImageRecord(img))),
+      }))
+    )
+
+    return NextResponse.json({ ...product, formFactors: resolvedFormFactors })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to fetch product'
     console.error('Product fetch error:', e)

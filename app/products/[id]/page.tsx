@@ -227,6 +227,37 @@ function FormFactorsSection({
   const [candidates, setCandidates] = useState<Record<string, FFImageCandidate[]>>({})
   const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set())
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [urlInputFF, setUrlInputFF] = useState<string | null>(null)
+  const [manualUrl, setManualUrl] = useState('')
+  const [addingUrl, setAddingUrl] = useState(false)
+
+  async function addManualUrl(ff: FormFactor) {
+    const url = manualUrl.trim()
+    if (!url) return
+    setAddingUrl(true)
+    try {
+      const res = await fetch('/api/cms/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formFactorId: ff.id,
+          images: [{ url, type: 'gallery' }],
+        }),
+      })
+      if (res.ok) {
+        setUrlInputFF(null)
+        setManualUrl('')
+        onImagesUpdated()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to add image')
+      }
+    } catch {
+      alert('Failed to add image')
+    } finally {
+      setAddingUrl(false)
+    }
+  }
 
   async function searchImages(ff: FormFactor) {
     setSearchingFF(ff.id)
@@ -314,14 +345,50 @@ function FormFactorsSection({
                       <span className="text-[10px] text-purple-400">{ff.images.length} img</span>
                     )}
                   </div>
-                  <button
-                    onClick={() => searchImages(ff)}
-                    disabled={isSearching}
-                    className="text-[10px] bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 px-3 py-1 rounded-lg transition-colors shrink-0"
-                  >
-                    {isSearching ? 'Searching…' : 'Find Images'}
-                  </button>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      onClick={() => searchImages(ff)}
+                      disabled={isSearching}
+                      className="text-[10px] bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-zinc-300 px-3 py-1 rounded-lg transition-colors"
+                    >
+                      {isSearching ? 'Searching…' : 'Find Images'}
+                    </button>
+                    <button
+                      onClick={() => { setUrlInputFF(urlInputFF === ff.id ? null : ff.id); setManualUrl('') }}
+                      className="text-[10px] bg-zinc-700 hover:bg-zinc-600 text-zinc-300 px-3 py-1 rounded-lg transition-colors"
+                    >
+                      Add URL
+                    </button>
+                  </div>
                 </div>
+
+                {/* Manual URL input */}
+                {urlInputFF === ff.id && (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="url"
+                      value={manualUrl}
+                      onChange={e => setManualUrl(e.target.value)}
+                      placeholder="Paste image URL (jpg, png, webp)…"
+                      className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-600 outline-none focus:border-brand-blue"
+                      autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') addManualUrl(ff) }}
+                    />
+                    <button
+                      onClick={() => addManualUrl(ff)}
+                      disabled={addingUrl || !manualUrl.trim()}
+                      className="text-[10px] bg-brand-blue hover:bg-blue-500 disabled:opacity-50 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                    >
+                      {addingUrl ? 'Adding…' : 'Add'}
+                    </button>
+                    <button
+                      onClick={() => { setUrlInputFF(null); setManualUrl('') }}
+                      className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-2 py-1.5 rounded-lg transition-colors shrink-0"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
 
                 {/* FF specs */}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
