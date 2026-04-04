@@ -2,20 +2,24 @@
 
 import { useState } from 'react'
 
+type ImageAssignment = 'platform' | string // 'platform' or a form factor name
+
 type CandidateImage = {
   url: string
   type: 'hero' | 'gallery'
   description?: string
   formFactorName?: string
   status: 'pending' | 'approved' | 'rejected'
+  assignment: ImageAssignment // where this image should be stored
 }
 
 interface ImageApprovalProps {
   images: CandidateImage[]
   onChange: (images: CandidateImage[]) => void
+  formFactorNames: string[] // available form factors for assignment
 }
 
-export function ImageApproval({ images, onChange }: ImageApprovalProps) {
+export function ImageApproval({ images, onChange, formFactorNames }: ImageApprovalProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [brokenUrls, setBrokenUrls] = useState<Set<string>>(new Set())
 
@@ -23,8 +27,8 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
   const approved = images.filter(i => i.status === 'approved')
   const rejected = images.filter(i => i.status === 'rejected')
 
-  function setStatus(url: string, status: CandidateImage['status']) {
-    onChange(images.map(i => i.url === url ? { ...i, status } : i))
+  function updateImage(url: string, update: Partial<CandidateImage>) {
+    onChange(images.map(i => i.url === url ? { ...i, ...update } : i))
   }
 
   function approveAll() {
@@ -49,7 +53,7 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
           <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider mb-2">
             Approved ({approved.length})
           </div>
-          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
             {approved.map(img => (
               <div key={img.url} className="relative group rounded-lg overflow-hidden border border-emerald-500/30 bg-zinc-950">
                 <div className="aspect-square">
@@ -61,20 +65,40 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
                     onError={() => handleBroken(img.url)}
                   />
                 </div>
-                <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-[8px]">✓</span>
+                {/* Assignment badge */}
+                <div className="absolute bottom-0 left-0 right-0 bg-black/80 px-2 py-1">
+                  <select
+                    value={img.assignment}
+                    onChange={(e) => updateImage(img.url, { assignment: e.target.value })}
+                    className="w-full bg-transparent text-[9px] text-zinc-300 outline-none cursor-pointer"
+                  >
+                    <option value="platform" className="bg-zinc-900">Platform Image</option>
+                    {formFactorNames.map(name => (
+                      <option key={name} value={name} className="bg-zinc-900">{name}</option>
+                    ))}
+                  </select>
                 </div>
-                {img.formFactorName && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5">
-                    <span className="text-[8px] text-zinc-300 truncate block">{img.formFactorName}</span>
-                  </div>
-                )}
-                <button
-                  onClick={() => setStatus(img.url, 'pending')}
-                  className="absolute top-0.5 left-0.5 w-4 h-4 bg-zinc-800/80 rounded-full text-zinc-400 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                >
-                  ↩
-                </button>
+                {/* Type badge */}
+                <div className="absolute top-1 left-1">
+                  <select
+                    value={img.type}
+                    onChange={(e) => updateImage(img.url, { type: e.target.value as 'hero' | 'gallery' })}
+                    className="bg-black/60 text-[8px] text-zinc-300 rounded px-1 py-0.5 outline-none cursor-pointer"
+                  >
+                    <option value="hero">Hero</option>
+                    <option value="gallery">Gallery</option>
+                  </select>
+                </div>
+                {/* Status indicator + undo */}
+                <div className="absolute top-1 right-1 flex gap-1">
+                  <span className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[8px]">✓</span>
+                  <button
+                    onClick={() => updateImage(img.url, { status: 'pending' })}
+                    className="w-4 h-4 bg-zinc-800/80 rounded-full text-zinc-400 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    ↩
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -123,18 +147,17 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
                       <span className="text-[8px] text-zinc-300 truncate block">{img.formFactorName}</span>
                     </div>
                   )}
-                  {/* Action buttons */}
                   <div className="absolute top-0 left-0 right-0 flex justify-between p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     {!isBroken && (
                       <button
-                        onClick={() => setStatus(img.url, 'approved')}
+                        onClick={() => updateImage(img.url, { status: 'approved' })}
                         className="w-5 h-5 bg-emerald-500/90 hover:bg-emerald-500 rounded-full text-white text-[10px] flex items-center justify-center transition-colors"
                       >
                         ✓
                       </button>
                     )}
                     <button
-                      onClick={() => setStatus(img.url, 'rejected')}
+                      onClick={() => updateImage(img.url, { status: 'rejected' })}
                       className="w-5 h-5 bg-red-500/70 hover:bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center ml-auto transition-colors"
                     >
                       ✕
@@ -160,14 +183,12 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
                   {brokenUrls.has(img.url) ? (
                     <div className="w-full h-full flex items-center justify-center text-zinc-700 text-[8px]">✕</div>
                   ) : (
-                    <img
-                      src={img.url} alt="" className="w-full h-full object-cover grayscale"
-                      referrerPolicy="no-referrer" onError={() => handleBroken(img.url)}
-                    />
+                    <img src={img.url} alt="" className="w-full h-full object-cover grayscale"
+                      referrerPolicy="no-referrer" onError={() => handleBroken(img.url)} />
                   )}
                 </div>
                 <button
-                  onClick={() => setStatus(img.url, 'pending')}
+                  onClick={() => updateImage(img.url, { status: 'pending' })}
                   className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-300 text-[9px]"
                 >
                   Restore
@@ -185,11 +206,7 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
           onClick={() => setPreviewUrl(null)}
         >
           <div className="relative max-w-4xl max-h-full" onClick={e => e.stopPropagation()}>
-            <img
-              src={previewUrl} alt="Preview"
-              className="max-w-full max-h-[80vh] object-contain rounded-xl"
-              referrerPolicy="no-referrer"
-            />
+            <img src={previewUrl} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl" referrerPolicy="no-referrer" />
             <button
               onClick={() => setPreviewUrl(null)}
               className="absolute top-2 right-2 w-8 h-8 bg-black/60 hover:bg-black/80 rounded-full text-white flex items-center justify-center transition-colors"
@@ -203,4 +220,4 @@ export function ImageApproval({ images, onChange }: ImageApprovalProps) {
   )
 }
 
-export type { CandidateImage }
+export type { CandidateImage, ImageAssignment }

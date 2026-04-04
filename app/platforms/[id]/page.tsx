@@ -36,10 +36,12 @@ type Platform = {
   connectivityIos: boolean; connectivityAndroid: boolean; connectivityBluetooth: boolean
   connectivityAuracast: boolean; connectivityHandsFree: boolean; connectivityRemoteControl: boolean
   autoFilled: boolean; confidenceLevel: string | null
-  manufacturer: { id: string; name: string }
+  manufacturer: { id: string; name: string; logoUrl: string | null }
   capabilityPool: Capability[]
   fittingOptions: FittingOption[]
+  images: Array<{ id: string; type: string; localUrl: string; variantHeroWide: string | null; variantSquare: string | null; variantThumbnail: string | null; sortOrder: number }>
   products: Product[]
+  _publishedSiteCount: number
   createdAt: string; updatedAt: string
 }
 
@@ -303,6 +305,34 @@ export default function PlatformDetailPage() {
         }`}>
           {rescanResult}
         </div>
+      )}
+
+      {/* Manufacturer Logo + Platform Images */}
+      {(platform.manufacturer.logoUrl || platform.images.length > 0) && (
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
+          <div className="flex items-start gap-6">
+            {platform.manufacturer.logoUrl && (
+              <div className="shrink-0">
+                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Manufacturer</label>
+                <div className="w-20 h-20 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                  <img src={platform.manufacturer.logoUrl} alt={platform.manufacturer.name} className="w-full h-full object-contain p-2" />
+                </div>
+              </div>
+            )}
+            {platform.images.length > 0 && (
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Platform Images ({platform.images.length})</label>
+                <div className="flex gap-3 overflow-x-auto">
+                  {platform.images.map(img => (
+                    <div key={img.id} className="shrink-0 w-32 h-24 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800">
+                      <img src={img.variantHeroWide || img.localUrl} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {/* Platform Summary */}

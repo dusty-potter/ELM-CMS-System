@@ -182,6 +182,7 @@ export default function ScanPage() {
         description: img.description,
         formFactorName: img.formFactorName ?? undefined,
         status: 'pending' as const,
+        assignment: img.formFactorName || 'platform',
       }))
 
       updatePlatform(name, {
@@ -238,7 +239,7 @@ export default function ScanPage() {
 
   async function storeImages(name: string) {
     const platform = platforms.find(p => p.name === name)
-    if (!platform || !platform.savedFormFactorIds.length) return
+    if (!platform || !platform.savedPlatformId) return
 
     const approved = platform.candidateImages.filter(i => i.status === 'approved')
     if (approved.length === 0) return
@@ -246,23 +247,49 @@ export default function ScanPage() {
     updatePlatform(name, { imageStatus: 'storing' })
 
     try {
-      // Store images on the first form factor (primary) for now
-      // TODO: match by formFactorName when multi-FF image storage is implemented
-      const formFactorId = platform.savedFormFactorIds[0]
-      const res = await fetch('/api/cms/images', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formFactorId,
-          images: approved.map(i => ({
-            url: i.url,
-            type: i.type,
-            description: i.description,
-          })),
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Image storage failed')
+      // Group approved images by assignment
+      const platformImages = approved.filter(i => i.assignment === 'platform')
+      const ffGroups: Record<string, typeof approved> = {}
+      for (const img of approved) {
+        if (img.assignment !== 'platform') {
+          if (!ffGroups[img.assignment]) ffGroups[img.assignment] = []
+          ffGroups[img.assignment].push(img)
+        }
+      }
+
+      // Store platform-level images
+      if (platformImages.length > 0) {
+        const res = await fetch('/api/cms/images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platformId: platform.savedPlatformId,
+            images: platformImages.map(i => ({ url: i.url, type: i.type, description: i.description })),
+          }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Platform image storage failed')
+        }
+      }
+
+      // Store form-factor-level images (use first FF ID as fallback)
+      for (const [, ffImages] of Object.entries(ffGroups)) {
+        const formFactorId = platform.savedFormFactorIds[0] // fallback for now
+        if (!formFactorId) continue
+        const res = await fetch('/api/cms/images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            formFactorId,
+            images: ffImages.map(i => ({ url: i.url, type: i.type, description: i.description })),
+          }),
+        })
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Form factor image storage failed')
+        }
+      }
 
       updatePlatform(name, { imageStatus: 'stored' })
     } catch {
@@ -658,6 +685,7 @@ export default function ScanPage() {
                   <ImageApproval
                     images={platform.candidateImages}
                     onChange={(images) => updatePlatform(platform.name, { candidateImages: images })}
+                    formFactorNames={platform.formFactors.map(ff => ff.name)}
                   />
                 </div>
               )}

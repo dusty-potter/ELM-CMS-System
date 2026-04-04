@@ -19,6 +19,7 @@ export async function GET(
         manufacturer: true,
         capabilityPool: { orderBy: { category: 'asc' } },
         fittingOptions: true,
+        images: { orderBy: { sortOrder: 'asc' } },
         products: {
           include: {
             formFactors: {
