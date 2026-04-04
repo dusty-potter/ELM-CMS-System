@@ -129,7 +129,7 @@ async function fetchPlatformContext(manufacturer: string, platformName: string, 
   const text = `\n\nHere is text extracted from manufacturer web pages about this platform and its products. Use this as your PRIMARY source of truth. Your training knowledge is SECONDARY — defer to this content for product names, features, specs, and claims:\n\n---\n${combined}\n---\n`
 
   // Deduplicate
-  const uniqueImages = [...new Set(allImageUrls)]
+  const uniqueImages = Array.from(new Set(allImageUrls))
 
   return { text, discoveredImageUrls: uniqueImages }
 }
