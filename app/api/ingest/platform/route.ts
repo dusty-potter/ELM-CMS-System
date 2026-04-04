@@ -18,7 +18,9 @@ function getManufacturerDomain(manufacturer: string): string {
   return domains[manufacturer.toLowerCase()] ?? `${manufacturer.toLowerCase()}.com`
 }
 
-async function fetchPage(url: string): Promise<string | null> {
+type FetchedPage = { text: string; imageUrls: string[] }
+
+async function fetchPage(url: string): Promise<FetchedPage | null> {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'ELM-CMS-Bot/1.0 (product-research)' },
@@ -26,23 +28,61 @@ async function fetchPage(url: string): Promise<string | null> {
     })
     if (!res.ok) return null
     const html = await res.text()
-    return html
+
+    // Extract image URLs BEFORE stripping HTML tags
+    const imageUrls: string[] = []
+    const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi
+    let match
+    const seen = new Set<string>()
+    const baseUrl = new URL(url).origin
+    while ((match = imgRegex.exec(html)) !== null) {
+      let imgUrl = match[1]
+      if (imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl
+      else if (imgUrl.startsWith('/')) imgUrl = baseUrl + imgUrl
+      // Skip tiny icons, tracking pixels, svgs, data URIs
+      if (imgUrl.includes('data:') || imgUrl.includes('.svg') || imgUrl.includes('1x1') ||
+          imgUrl.includes('pixel') || imgUrl.includes('icon') || imgUrl.includes('logo') ||
+          imgUrl.includes('sprite') || imgUrl.includes('spacer')) continue
+      // Only keep image file extensions or known CDN patterns
+      if (!imgUrl.match(/\.(jpg|jpeg|png|webp)/i) && !imgUrl.includes('/image/') && !imgUrl.includes('/media/')) continue
+      if (seen.has(imgUrl)) continue
+      seen.add(imgUrl)
+      imageUrls.push(imgUrl)
+    }
+
+    // Also check for srcset and data-src attributes
+    const dataSrcRegex = /(?:data-src|srcset)=["']([^"'\s,]+)/gi
+    while ((match = dataSrcRegex.exec(html)) !== null) {
+      let imgUrl = match[1]
+      if (imgUrl.startsWith('//')) imgUrl = 'https:' + imgUrl
+      else if (imgUrl.startsWith('/')) imgUrl = baseUrl + imgUrl
+      if (imgUrl.includes('data:') || imgUrl.includes('.svg')) continue
+      if (!imgUrl.match(/\.(jpg|jpeg|png|webp)/i) && !imgUrl.includes('/image/') && !imgUrl.includes('/media/')) continue
+      if (seen.has(imgUrl)) continue
+      seen.add(imgUrl)
+      imageUrls.push(imgUrl)
+    }
+
+    const text = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 12000)
+
+    return { text, imageUrls }
   } catch {
     return null
   }
 }
 
-async function fetchPlatformContext(manufacturer: string, platformName: string, formFactorNames: string[]): Promise<string> {
+type PlatformContext = { text: string; discoveredImageUrls: string[] }
+
+async function fetchPlatformContext(manufacturer: string, platformName: string, formFactorNames: string[]): Promise<PlatformContext> {
   const domain = getManufacturerDomain(manufacturer)
   const slug = platformName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
-  // Try known URL patterns for the platform overview page
   const overviewUrls = [
     `https://www.${domain}/hearing-aids/${slug}`,
     `https://www.${domain}/en-us/hearing-aids/${slug}`,
@@ -51,12 +91,14 @@ async function fetchPlatformContext(manufacturer: string, platformName: string, 
   ]
 
   const pages: string[] = []
+  const allImageUrls: string[] = []
 
   // Fetch platform overview
   for (const url of overviewUrls) {
-    const content = await fetchPage(url)
-    if (content && content.length > 500) {
-      pages.push(`[Platform overview page]\n${content}`)
+    const result = await fetchPage(url)
+    if (result && result.text.length > 500) {
+      pages.push(`[Platform overview page]\n${result.text}`)
+      allImageUrls.push(...result.imageUrls)
       break
     }
   }
@@ -72,18 +114,24 @@ async function fetchPlatformContext(manufacturer: string, platformName: string, 
       `https://www.${domain}/hearing-aids/${slug}/${ffSlug}`,
     ]
     for (const url of ffUrls) {
-      const content = await fetchPage(url)
-      if (content && content.length > 500) {
-        pages.push(`[Form factor page: ${ffSlug}]\n${content.slice(0, 6000)}`)
+      const result = await fetchPage(url)
+      if (result && result.text.length > 500) {
+        pages.push(`[Form factor page: ${ffSlug}]\n${result.text.slice(0, 6000)}`)
+        allImageUrls.push(...result.imageUrls)
         break
       }
     }
   }
 
-  if (pages.length === 0) return ''
+  if (pages.length === 0) return { text: '', discoveredImageUrls: [] }
 
   const combined = pages.join('\n\n---\n\n').slice(0, 25000)
-  return `\n\nHere is text extracted from manufacturer web pages about this platform and its products. Use this as your PRIMARY source of truth. Your training knowledge is SECONDARY — defer to this content for product names, features, specs, and claims:\n\n---\n${combined}\n---\n`
+  const text = `\n\nHere is text extracted from manufacturer web pages about this platform and its products. Use this as your PRIMARY source of truth. Your training knowledge is SECONDARY — defer to this content for product names, features, specs, and claims:\n\n---\n${combined}\n---\n`
+
+  // Deduplicate
+  const uniqueImages = [...new Set(allImageUrls)]
+
+  return { text, discoveredImageUrls: uniqueImages }
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +150,7 @@ export async function POST(req: NextRequest) {
   }
 
   const formFactorNames = (platform.formFactors ?? []).map((ff: { name: string }) => ff.name)
-  const webContext = await fetchPlatformContext(manufacturer, platform.name, formFactorNames)
+  const { text: webContext, discoveredImageUrls } = await fetchPlatformContext(manufacturer, platform.name, formFactorNames)
 
   const tierList = (platform.tiers ?? [])
     .map((t: { id: string; label: string; tier: string }) => `${t.id} (${t.tier})`)
@@ -228,12 +276,29 @@ Return ONLY a valid JSON object (no markdown, no explanation):
 
     const cleaned = rawText.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()
 
-    let research: unknown
+    let research: Record<string, unknown>
     try {
       research = JSON.parse(cleaned)
     } catch {
       return NextResponse.json({ error: 'AI returned malformed JSON' }, { status: 502 })
     }
+
+    // Merge scraped image URLs with any AI-discovered ones
+    const aiImages = (research.imageUrls as Array<{ url: string }>) ?? []
+    const aiImageUrlSet = new Set(aiImages.map(i => i.url))
+
+    // Add scraped images that the AI didn't already include
+    const scrapedImages = discoveredImageUrls
+      .filter(url => !aiImageUrlSet.has(url))
+      .slice(0, 20) // cap at 20 scraped images
+      .map(url => ({
+        url,
+        type: 'gallery' as const,
+        description: 'Discovered from manufacturer website',
+        formFactorName: null,
+      }))
+
+    research.imageUrls = [...aiImages, ...scrapedImages]
 
     return NextResponse.json({ manufacturer, platform: platform.name, research })
   } catch (e) {
