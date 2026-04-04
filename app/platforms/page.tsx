@@ -73,7 +73,7 @@ export default function PlatformsPage() {
               className="block bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 hover:border-zinc-700 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-lg font-bold text-white">{p.manufacturer.name} {p.displayName || p.name}</span>
+                <span className="text-lg font-bold text-white">{p.displayName || `${p.manufacturer.name} ${p.name}`}</span>
                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${STATUS_STYLES[p.status]}`}>
                   {p.status}
                 </span>
@@ -101,7 +101,7 @@ export default function PlatformsPage() {
                 className="block bg-zinc-900/50 border border-zinc-800 rounded-2xl px-6 py-3 opacity-60 hover:opacity-80 transition-all"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-white">{p.manufacturer.name} {p.displayName || p.name}</span>
+                  <span className="text-sm font-bold text-white">{p.displayName || `${p.manufacturer.name} ${p.name}`}</span>
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-zinc-700 text-zinc-400 border border-zinc-600">
                     Legacy
                   </span>
@@ -124,7 +124,7 @@ export default function PlatformsPage() {
                 className="block bg-zinc-900/50 border border-red-500/10 rounded-2xl px-6 py-3 opacity-40 hover:opacity-60 transition-all"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-white">{p.manufacturer.name} {p.displayName || p.name}</span>
+                  <span className="text-sm font-bold text-white">{p.displayName || `${p.manufacturer.name} ${p.name}`}</span>
                   <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
                     Retired
                   </span>

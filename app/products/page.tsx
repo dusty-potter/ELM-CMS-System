@@ -13,7 +13,7 @@ type Product = {
   confidenceLevel: string | null
   autoFilled: boolean
   manufacturer: { name: string }
-  platform: { name: string }
+  platform: { id: string; name: string }
   formFactors: { id: string; style: string; name: string; status: string }[]
   _count: { variants: number; publications: number }
 }
@@ -35,6 +35,19 @@ const CONFIDENCE_STYLES: Record<string, string> = {
   high:   'text-emerald-400',
   medium: 'text-yellow-400',
   low:    'text-red-400',
+}
+
+// Stable color for each manufacturer (based on name hash)
+const MFR_COLORS = [
+  'bg-blue-500',    'bg-emerald-500', 'bg-purple-500', 'bg-amber-500',
+  'bg-rose-500',    'bg-cyan-500',    'bg-indigo-500',  'bg-orange-500',
+  'bg-teal-500',    'bg-pink-500',
+]
+
+function mfrColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i)
+  return MFR_COLORS[Math.abs(hash) % MFR_COLORS.length]
 }
 
 export default function ProductsPage() {
@@ -71,6 +84,16 @@ export default function ProductsPage() {
     }
     return true
   })
+
+  // Group filtered products by manufacturer, then by platform
+  const grouped: Record<string, Record<string, Product[]>> = {}
+  for (const p of filtered) {
+    const mfr = p.manufacturer.name
+    const plat = p.platform.name
+    if (!grouped[mfr]) grouped[mfr] = {}
+    if (!grouped[mfr][plat]) grouped[mfr][plat] = []
+    grouped[mfr][plat].push(p)
+  }
 
   const counts = {
     all: products.length,
@@ -138,57 +161,86 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {!loading && !error && (
-        <div className="space-y-2">
-          {filtered.length === 0 ? (
-            <div className="text-center py-20 text-zinc-600">No products found.</div>
-          ) : (
-            filtered.map((p) => (
-              <Link
-                key={p.id}
-                href={`/products/${p.id}`}
-                className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl px-5 py-4 flex items-center gap-4 transition-colors block"
-              >
-                {/* Status */}
-                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${STATUS_STYLES[p.status]}`}>
-                  {p.status}
-                </span>
+      {!loading && !error && filtered.length === 0 && (
+        <div className="text-center py-20 text-zinc-600">No products found.</div>
+      )}
 
-                {/* Name + meta */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-white text-sm">{p.name}</span>
-                    {p.tier && (
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${TIER_STYLES[p.tier] ?? ''}`}>
-                        {p.tier}
-                      </span>
-                    )}
-                    {p.autoFilled && (
-                      <span className="text-[10px] text-zinc-600 uppercase font-bold">AI</span>
-                    )}
-                    {p.confidenceLevel && (
-                      <span className={`text-[10px] font-bold uppercase ${CONFIDENCE_STYLES[p.confidenceLevel] ?? ''}`}>
-                        {p.confidenceLevel} confidence
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    {p.manufacturer.name} · {p.platform.name}
-                    {p.formFactors.length > 0 && (
-                      <> · {p.formFactors.map((ff) => ff.style).join(', ')}</>
-                    )}
-                  </p>
+      {!loading && !error && Object.keys(grouped).length > 0 && (
+        <div className="space-y-8">
+          {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([mfrName, platforms]) => {
+            const color = mfrColor(mfrName)
+            return (
+              <div key={mfrName}>
+                {/* Manufacturer header */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`w-3 h-3 rounded-full ${color}`} />
+                  <h2 className="text-lg font-bold text-white">{mfrName}</h2>
+                  <span className="text-xs text-zinc-600">
+                    {Object.values(platforms).flat().length} products
+                  </span>
                 </div>
 
-                {/* Counts */}
-                <div className="flex gap-4 text-xs text-zinc-600 shrink-0">
-                  <span>{p.formFactors.length} form {p.formFactors.length === 1 ? 'factor' : 'factors'}</span>
-                  <span>{p._count.variants} variants</span>
-                  <span>{p._count.publications} sites</span>
+                {/* Platforms within manufacturer */}
+                <div className="space-y-4">
+                  {Object.entries(platforms).map(([platName, prods]) => (
+                    <div key={platName}>
+                      {/* Platform sub-header */}
+                      <div className="flex items-center gap-2 mb-2 ml-6">
+                        <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{platName}</span>
+                        <span className="text-[10px] text-zinc-700">{prods.length} tier{prods.length !== 1 ? 's' : ''}</span>
+                      </div>
+
+                      {/* Product rows */}
+                      <div className="space-y-1.5">
+                        {prods.map((p) => (
+                          <Link
+                            key={p.id}
+                            href={`/products/${p.id}`}
+                            className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl px-5 py-3 flex items-center gap-4 transition-colors block"
+                          >
+                            {/* Manufacturer color bar */}
+                            <div className={`w-1 h-10 rounded-full ${color} shrink-0`} />
+
+                            {/* Status */}
+                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${STATUS_STYLES[p.status]}`}>
+                              {p.status}
+                            </span>
+
+                            {/* Name + meta */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-white text-sm">{p.displayName || p.name}</span>
+                                {p.tier && (
+                                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${TIER_STYLES[p.tier] ?? ''}`}>
+                                    {p.tier}
+                                  </span>
+                                )}
+                                {p.autoFilled && (
+                                  <span className="text-[10px] text-zinc-600 uppercase font-bold">AI</span>
+                                )}
+                                {p.confidenceLevel && (
+                                  <span className={`text-[10px] font-bold uppercase ${CONFIDENCE_STYLES[p.confidenceLevel] ?? ''}`}>
+                                    {p.confidenceLevel}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-zinc-600 mt-0.5">
+                                {p.formFactors.length > 0 && (
+                                  <>{p.formFactors.length} form factor{p.formFactors.length !== 1 ? 's' : ''}</>
+                                )}
+                                {p._count.variants > 0 && <> · {p._count.variants} variants</>}
+                                {p._count.publications > 0 && <> · {p._count.publications} sites</>}
+                              </p>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </Link>
-            ))
-          )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
