@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 // ---------------------------------------------------------------------------
@@ -71,11 +71,14 @@ const CAP_CATEGORY_STYLES: Record<string, string> = {
 
 export default function PlatformDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const [platform, setPlatform] = useState<Platform | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [expandedTier, setExpandedTier] = useState<string | null>(null)
+  const [rescanning, setRescanning] = useState(false)
+  const [rescanResult, setRescanResult] = useState<string | null>(null)
 
   const fetchPlatform = useCallback(() => {
     fetch(`/api/cms/platforms/${id}`)
@@ -109,6 +112,71 @@ export default function PlatformDetailPage() {
       alert(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function deletePlatform() {
+    if (!confirm('This will permanently delete the platform and all its data. This cannot be undone. Continue?')) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/cms/platforms/${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      router.push('/platforms')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
+      setSaving(false)
+    }
+  }
+
+  async function rescanPlatform() {
+    if (!platform) return
+    setRescanning(true)
+    setRescanResult(null)
+    try {
+      // Step 1: Re-enumerate the manufacturer
+      const enumRes = await fetch('/api/ingest/enumerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer: platform.manufacturer.name }),
+      })
+      const enumData = await enumRes.json()
+      if (!enumRes.ok) throw new Error(enumData.error || 'Enumerate failed')
+
+      // Find matching platform
+      const match = (enumData.platforms ?? []).find(
+        (p: { name: string }) => p.name.toLowerCase() === platform.name.toLowerCase()
+      )
+      if (!match) throw new Error(`Platform "${platform.name}" not found in manufacturer lineup`)
+
+      // Step 2: Research the platform
+      const researchRes = await fetch('/api/ingest/platform', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manufacturer: platform.manufacturer.name, platform: match }),
+      })
+      const researchData = await researchRes.json()
+      if (!researchRes.ok) throw new Error(researchData.error || 'Research failed')
+
+      // Step 3: Save/update the platform
+      const saveRes = await fetch('/api/cms/save-platform', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manufacturer: platform.manufacturer.name,
+          platform: match,
+          research: researchData.research,
+        }),
+      })
+      const saveData = await saveRes.json()
+      if (!saveRes.ok) throw new Error(saveData.error || 'Save failed')
+
+      setRescanResult(`Rescan complete — ${saveData.productIds?.length ?? 0} tiers, ${saveData.formFactorIds?.length ?? 0} form factors updated`)
+      fetchPlatform()
+    } catch (e) {
+      setRescanResult(`Error: ${e instanceof Error ? e.message : 'Rescan failed'}`)
+    } finally {
+      setRescanning(false)
     }
   }
 
@@ -159,7 +227,14 @@ export default function PlatformDetailPage() {
               {platform.confidenceLevel && <> · <span className="text-zinc-600">{platform.confidenceLevel} confidence</span></>}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+            {/* Rescan */}
+            <button onClick={rescanPlatform} disabled={saving || rescanning}
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
+              {rescanning ? 'Rescanning…' : 'Rescan'}
+            </button>
+
+            {/* Status workflow */}
             {platform.status === 'draft' && (
               <button onClick={() => patchPlatform({ status: 'approved' })} disabled={saving}
                 className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
@@ -172,15 +247,42 @@ export default function PlatformDetailPage() {
                 Publish
               </button>
             )}
+            {(platform.status === 'published' || platform.status === 'approved') && (
+              <button
+                onClick={() => {
+                  if (confirm('This will unpublish all products from all sites and retire this platform. Continue?'))
+                    patchPlatform({ status: 'retired' })
+                }}
+                disabled={saving}
+                className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
+                Retire
+              </button>
+            )}
+            {platform.status === 'retired' && (
+              <button onClick={() => patchPlatform({ status: 'draft' })} disabled={saving}
+                className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
+                Reactivate
+              </button>
+            )}
+
+            {/* Legacy toggle */}
             {platform.isLegacy ? (
               <button onClick={() => patchPlatform({ isLegacy: false })} disabled={saving}
                 className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
-                Remove Legacy Flag
+                Remove Legacy
               </button>
             ) : (
               <button onClick={() => patchPlatform({ isLegacy: true })} disabled={saving}
                 className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
-                Mark as Legacy
+                Mark Legacy
+              </button>
+            )}
+
+            {/* Delete — only when not published to sites */}
+            {(platform.status === 'draft' || platform.status === 'retired') && (
+              <button onClick={deletePlatform} disabled={saving}
+                className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-4 py-2 rounded-xl transition-colors disabled:opacity-50">
+                Delete
               </button>
             )}
           </div>
@@ -188,6 +290,20 @@ export default function PlatformDetailPage() {
       </div>
 
       {saving && <div className="text-xs text-blue-400 animate-pulse">Saving…</div>}
+
+      {platform.status === 'retired' && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-sm text-red-400">
+          This platform is retired and unpublished from all sites.
+        </div>
+      )}
+
+      {rescanResult && (
+        <div className={`rounded-xl px-4 py-3 text-sm ${
+          rescanResult.startsWith('Error') ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+        }`}>
+          {rescanResult}
+        </div>
+      )}
 
       {/* Platform Summary */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">

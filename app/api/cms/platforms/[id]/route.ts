@@ -39,7 +39,15 @@ export async function GET(
       return NextResponse.json({ error: 'Platform not found' }, { status: 404 })
     }
 
-    return NextResponse.json(platform)
+    // Include total published site publication count for delete eligibility
+    const publishedCount = await prisma.sitePublication.count({
+      where: {
+        product: { platformId: id },
+        status: 'published',
+      },
+    })
+
+    return NextResponse.json({ ...platform, _publishedSiteCount: publishedCount })
   } catch (e) {
     console.error('Platform fetch error:', e)
     return NextResponse.json({ error: 'Failed to fetch platform' }, { status: 500 })
@@ -48,6 +56,10 @@ export async function GET(
 
 // ---------------------------------------------------------------------------
 // PATCH /api/cms/platforms/[id]
+//
+// When status is set to 'retired':
+//   - All SitePublications for products under this platform are deleted
+//   - All child Products are also set to 'retired'
 // ---------------------------------------------------------------------------
 
 export async function PATCH(
@@ -57,7 +69,6 @@ export async function PATCH(
   const { id } = await params
   const fields = await req.json()
 
-  // Whitelist of updatable fields
   const allowed: Record<string, boolean> = {
     displayName: true, summary: true, keyDifferentiators: true,
     techTerms: true, status: true, isLegacy: true, generationYear: true,
@@ -75,10 +86,74 @@ export async function PATCH(
   }
 
   try {
-    const updated = await prisma.platform.update({ where: { id }, data })
+    // Retire cascade: unpublish from all sites and retire all products
+    if (data.status === 'retired') {
+      await prisma.$transaction(async (tx) => {
+        // Delete all site publications for products under this platform
+        await tx.sitePublication.deleteMany({
+          where: { product: { platformId: id } },
+        })
+        // Set all child products to retired
+        await tx.product.updateMany({
+          where: { platformId: id },
+          data: { status: 'retired' },
+        })
+        // Update the platform itself
+        await tx.platform.update({ where: { id }, data })
+      })
+    } else {
+      await prisma.platform.update({ where: { id }, data })
+    }
+
+    // Return updated platform
+    const updated = await prisma.platform.findUnique({ where: { id } })
     return NextResponse.json(updated)
   } catch (e) {
     console.error('Platform update error:', e)
     return NextResponse.json({ error: 'Failed to update platform' }, { status: 500 })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/cms/platforms/[id]
+//
+// Hard delete — only allowed when no products are published to sites.
+// Deletes all child products first (they cascade their children),
+// then deletes the platform.
+// ---------------------------------------------------------------------------
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params
+
+  try {
+    // Check for published site publications
+    const publishedCount = await prisma.sitePublication.count({
+      where: {
+        product: { platformId: id },
+        status: 'published',
+      },
+    })
+
+    if (publishedCount > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete — ${publishedCount} product(s) are published to sites. Retire the platform first.` },
+        { status: 409 },
+      )
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Delete all products under this platform (cascades form factors, variants, publications, declarations)
+      await tx.product.deleteMany({ where: { platformId: id } })
+      // Now delete the platform (cascades fitting options, capabilities)
+      await tx.platform.delete({ where: { id } })
+    })
+
+    return NextResponse.json({ deleted: true })
+  } catch (e) {
+    console.error('Platform delete error:', e)
+    return NextResponse.json({ error: 'Failed to delete platform' }, { status: 500 })
   }
 }

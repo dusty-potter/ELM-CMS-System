@@ -13,10 +13,12 @@ datasource db {
 
 // Shared lifecycle status for Platform, Product, FormFactor, and ContentVariant.
 // Nothing reaches `approved` or `published` without explicit human action.
+// `retired` means previously published, now withdrawn from all sites.
 enum PublishStatus {
   draft
   approved
   published
+  retired
 }
 
 // Scope of a content variant — global applies to all sites, site_specific is

@@ -64,6 +64,13 @@ export async function PATCH(
       compRemoteCare, compHealthTracking,
     } = body
 
+    // Retire cascade: unpublish from all sites
+    if (status === 'retired') {
+      await prisma.sitePublication.deleteMany({
+        where: { productId: params.id },
+      })
+    }
+
     const product = await prisma.product.update({
       where: { id: params.id },
       data: {
@@ -94,6 +101,38 @@ export async function PATCH(
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to update product'
     console.error('Product update error:', e)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/cms/products/[id]
+//
+// Hard delete — only when no published site publications exist.
+// Cascades: FormFactors, ContentVariants, SitePublications, Declarations.
+// ---------------------------------------------------------------------------
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const publishedCount = await prisma.sitePublication.count({
+      where: { productId: params.id, status: 'published' },
+    })
+
+    if (publishedCount > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete — product is published to ${publishedCount} site(s). Retire it first.` },
+        { status: 409 },
+      )
+    }
+
+    await prisma.product.delete({ where: { id: params.id } })
+    return NextResponse.json({ deleted: true })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Failed to delete product'
+    console.error('Product delete error:', e)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
