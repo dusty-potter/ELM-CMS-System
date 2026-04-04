@@ -128,7 +128,22 @@ export async function DELETE(
       )
     }
 
-    await prisma.product.delete({ where: { id: params.id } })
+    // Must delete in order to respect RESTRICT constraints:
+    // FormFactorCapabilityDeclarations → FormFactorCapabilityExclusions
+    //   (both RESTRICT on ProductCapabilityDeclaration)
+    // Then ProductCapabilityDeclarations, FormFactors, etc. can cascade
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete FF capability declarations & exclusions (they RESTRICT ProductCapabilityDeclaration)
+      await tx.formFactorCapabilityDeclaration.deleteMany({
+        where: { formFactor: { productId: params.id } },
+      })
+      await tx.formFactorCapabilityExclusion.deleteMany({
+        where: { formFactor: { productId: params.id } },
+      })
+      // 2. Now safe to delete the product (cascades: ProductCapDecls, FormFactors, Variants, Publications)
+      await tx.product.delete({ where: { id: params.id } })
+    })
+
     return NextResponse.json({ deleted: true })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to delete product'
