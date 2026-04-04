@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const links = [
-  { href: '/products',  label: 'Products' },
-  { href: '/sites',     label: 'Sites' },
-  { href: '/users',     label: 'Users' },
-  { href: '/scan',      label: 'Scan Lineup' },
-  { href: '/ingest',    label: 'Research' },
+  { href: '/products',   label: 'Products' },
+  { href: '/platforms',  label: 'Platforms' },
+  { href: '/sites',      label: 'Sites' },
+  { href: '/users',      label: 'Users' },
+  { href: '/scan',       label: 'Scan Lineup' },
+  { href: '/ingest',     label: 'Research' },
 ]
 
 export default function Nav() {
@@ -27,7 +28,7 @@ export default function Nav() {
               key={link.href}
               href={link.href}
               className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                pathname === link.href
+                pathname === link.href || pathname.startsWith(link.href + '/')
                   ? 'bg-zinc-800 text-white'
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}

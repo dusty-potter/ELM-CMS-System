@@ -72,6 +72,7 @@ enum FormFactorStyle {
   CIC
   IIC
   miniRITE
+  slimRIC
   other
 }
 
@@ -167,6 +168,9 @@ model Platform {
   slug           String
   generationYear Int?
   status         PublishStatus @default(draft)
+  // Predecessor platforms (e.g. AX before IX) are flagged as legacy.
+  // Legacy platforms are excluded from active CMS lineup display.
+  isLegacy       Boolean       @default(false)
 
   // Technology narrative — human-authored.
   summary            String?
@@ -189,9 +193,10 @@ model Platform {
   confidenceLevel ConfidenceLevel?
   ingestSource    String?
 
-  capabilityPool PlatformCapability[]
-  products       Product[]
-  formFactors    FormFactor[]
+  capabilityPool  PlatformCapability[]
+  products        Product[]
+  formFactors     FormFactor[]
+  fittingOptions  FittingOption[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -199,6 +204,35 @@ model Platform {
   // Platform slug is unique within a manufacturer.
   @@unique([manufacturerId, slug])
   @@map("platforms")
+}
+
+// ---------------------------------------------------------------------------
+// Fitting Option
+//
+// A fitting configuration that is NOT a standalone product or form factor.
+// Example: CROS (contralateral routing of sound) — a transmitter device
+// for single-sided deafness that pairs with the platform's receiver aids.
+// Tracked at the platform level because the CROS device is tied to a
+// specific technology generation (e.g. "CROS IX" pairs with IX aids).
+// ---------------------------------------------------------------------------
+
+model FittingOption {
+  id          String   @id @default(cuid())
+  platformId  String
+  platform    Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  name        String            // e.g. "CROS IX"
+  description String?           // e.g. "Transmitter for single-sided deafness..."
+  styles      FormFactorStyle[] // Physical styles available, e.g. [RIC, BTE]
+
+  autoFilled      Boolean          @default(false)
+  confidenceLevel ConfidenceLevel?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platformId, name])
+  @@map("fitting_options")
 }
 
 // ---------------------------------------------------------------------------

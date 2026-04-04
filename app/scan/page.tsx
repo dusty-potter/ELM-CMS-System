@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { ImageApproval, type CandidateImage } from '../components/ImageApproval'
 
 const MANUFACTURERS = [
   'Phonak', 'Oticon', 'Starkey', 'ReSound', 'Widex',
@@ -17,35 +18,42 @@ const TIER_STYLES: Record<string, string> = {
   essential: 'bg-zinc-800      text-zinc-400   border-zinc-700',
 }
 
-const TIER_ORDER: Record<string, number> = {
-  premium: 0, advanced: 1, standard: 2, essential: 3,
+const STYLE_COLORS: Record<string, string> = {
+  RIC:     'bg-blue-500/10 text-blue-400',
+  BTE:     'bg-purple-500/10 text-purple-400',
+  ITE:     'bg-orange-500/10 text-orange-400',
+  CIC:     'bg-emerald-500/10 text-emerald-400',
+  IIC:     'bg-emerald-500/10 text-emerald-400',
+  miniRITE:'bg-blue-500/10 text-blue-400',
+  slimRIC: 'bg-indigo-500/10 text-indigo-400',
+  other:   'bg-zinc-700 text-zinc-400',
 }
 
 type ResearchStatus = 'idle' | 'loading' | 'done' | 'error'
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type ImageStatus = 'idle' | 'storing' | 'stored' | 'error'
 
-type DiscoveredImage = {
-  url: string
-  type: 'hero' | 'gallery'
-  description?: string
-}
+type EnumTier = { id: string; label: string; tier: string }
+type EnumFormFactor = { name: string; style: string; availableTiers: string[]; notes?: string | null }
+type EnumFittingOption = { name: string; description: string; styles: string[] }
 
-type ScannedProduct = {
+type ScannedPlatform = {
   name: string
-  displayName: string | null
-  platform: string | null
-  tier: 'premium' | 'advanced' | 'standard' | 'essential' | null
-  availableTiers: string[] | null
-  releaseYear: number | null
-  formFactorStyles: string[]
-  formFactorRestrictions: string | null
+  displayName: string
+  generationYear: number | null
+  isLegacy: boolean
+  tiers: EnumTier[]
+  formFactors: EnumFormFactor[]
+  fittingOptions: EnumFittingOption[]
   active: boolean
   researchStatus: ResearchStatus
   researchedData: Record<string, unknown> | null
   saveStatus: SaveStatus
   imageStatus: ImageStatus
+  savedPlatformId: string | null
+  savedProductIds: string[]
   savedFormFactorIds: string[]
+  candidateImages: CandidateImage[]
 }
 
 // ── Toggle switch ──────────────────────────────────────────────────────────────
@@ -68,28 +76,6 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
   )
 }
 
-// ── Status pill ────────────────────────────────────────────────────────────────
-
-function StatusPill({ status }: { status: ResearchStatus }) {
-  const styles: Record<ResearchStatus, string> = {
-    idle:    'bg-zinc-800 text-zinc-500',
-    loading: 'bg-brand-blue/20 text-blue-400 animate-pulse',
-    done:    'bg-emerald-500/20 text-emerald-400',
-    error:   'bg-red-500/20 text-red-400',
-  }
-  const labels: Record<ResearchStatus, string> = {
-    idle:    'Not researched',
-    loading: 'Researching…',
-    done:    'Researched',
-    error:   'Error',
-  }
-  return (
-    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  )
-}
-
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function ScanPage() {
@@ -98,13 +84,19 @@ export default function ScanPage() {
   const [customName, setCustomName] = useState('')
   const [customUrl, setCustomUrl] = useState('')
   const [manufacturer, setManufacturer] = useState('')
-  const [products, setProducts] = useState<ScannedProduct[]>([])
+  const [platforms, setPlatforms] = useState<ScannedPlatform[]>([])
   const [error, setError] = useState<string | null>(null)
   const [bulkResearching, setBulkResearching] = useState(false)
 
   const isCustom = manufacturerSelect === CUSTOM
   const resolvedManufacturer = isCustom ? customName.trim() : manufacturerSelect
   const canScan = isCustom ? !!customName.trim() : !!manufacturerSelect
+
+  // ── Helpers to update a specific platform ──
+
+  function updatePlatform(name: string, update: Partial<ScannedPlatform>) {
+    setPlatforms(prev => prev.map(p => p.name === name ? { ...p, ...update } : p))
+  }
 
   // ── Scan ──
 
@@ -127,24 +119,26 @@ export default function ScanPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Scan failed')
 
-      const scanned: ScannedProduct[] = (data.products ?? []).map((p: Record<string, unknown>) => ({
-        name: p.name as string,
-        displayName: (p.displayName as string) ?? null,
-        platform: (p.platform as string) ?? null,
-        tier: (p.tier as ScannedProduct['tier']) ?? null,
-        availableTiers: (p.availableTiers as string[]) ?? null,
-        releaseYear: (p.releaseYear as number) ?? null,
-        formFactorStyles: (p.formFactorStyles as string[]) ?? [],
-        formFactorRestrictions: (p.formFactorRestrictions as string) ?? null,
-        active: true,
+      const scanned: ScannedPlatform[] = (data.platforms ?? []).map((p: Record<string, unknown>) => ({
+        name: (p.name as string) ?? 'Unknown',
+        displayName: (p.displayName as string) ?? '',
+        generationYear: (p.generationYear as number) ?? null,
+        isLegacy: (p.isLegacy as boolean) ?? false,
+        tiers: (p.tiers as EnumTier[]) ?? [],
+        formFactors: (p.formFactors as EnumFormFactor[]) ?? [],
+        fittingOptions: (p.fittingOptions as EnumFittingOption[]) ?? [],
+        active: !(p.isLegacy as boolean),
         researchStatus: 'idle' as ResearchStatus,
         researchedData: null,
         saveStatus: 'idle' as SaveStatus,
         imageStatus: 'idle' as ImageStatus,
+        savedPlatformId: null,
+        savedProductIds: [],
         savedFormFactorIds: [],
+        candidateImages: [],
       }))
 
-      setProducts(scanned)
+      setPlatforms(scanned)
       setStep('results')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')
@@ -152,139 +146,155 @@ export default function ScanPage() {
     }
   }
 
-  // ── Per-product toggle ──
+  // ── Research a platform ──
 
-  function toggleActive(name: string) {
-    setProducts((prev) =>
-      prev.map((p) => p.name === name ? { ...p, active: !p.active } : p)
-    )
-  }
+  async function researchPlatform(name: string) {
+    const platform = platforms.find(p => p.name === name)
+    if (!platform) return
 
-  // ── Bulk toggles ──
+    updatePlatform(name, { researchStatus: 'loading' })
 
-  function activateAll()   { setProducts((prev) => prev.map((p) => ({ ...p, active: true }))) }
-  function deactivateAll() { setProducts((prev) => prev.map((p) => ({ ...p, active: false }))) }
-
-  // ── Research individual product ──
-
-  async function researchProduct(name: string) {
-    setProducts((prev) =>
-      prev.map((p) => p.name === name ? { ...p, researchStatus: 'loading' } : p)
-    )
     try {
-      const res = await fetch('/api/ingest', {
+      const res = await fetch('/api/ingest/platform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer, modelName: name }),
+        body: JSON.stringify({
+          manufacturer,
+          platform: {
+            name: platform.name,
+            tiers: platform.tiers,
+            formFactors: platform.formFactors,
+            fittingOptions: platform.fittingOptions,
+          },
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Research failed')
-      setProducts((prev) =>
-        prev.map((p) => p.name === name
-          ? { ...p, researchStatus: 'done', researchedData: data.product }
-          : p
-        )
-      )
+
+      // Extract candidate images from research
+      const imageUrls = (data.research?.imageUrls as Array<{
+        url: string; type: string; description?: string; formFactorName?: string
+      }>) ?? []
+
+      const candidates: CandidateImage[] = imageUrls.map(img => ({
+        url: img.url,
+        type: (img.type === 'hero' ? 'hero' : 'gallery') as 'hero' | 'gallery',
+        description: img.description,
+        formFactorName: img.formFactorName ?? undefined,
+        status: 'pending' as const,
+      }))
+
+      updatePlatform(name, {
+        researchStatus: 'done',
+        researchedData: data.research,
+        candidateImages: candidates,
+      })
     } catch {
-      setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, researchStatus: 'error' } : p)
-      )
+      updatePlatform(name, { researchStatus: 'error' })
     }
   }
 
-  async function saveProduct(name: string) {
-    const product = products.find((p) => p.name === name)
-    if (!product?.researchedData) return
-    setProducts((prev) =>
-      prev.map((p) => p.name === name ? { ...p, saveStatus: 'saving' } : p)
-    )
+  // ── Save a platform ──
+
+  async function savePlatform(name: string) {
+    const platform = platforms.find(p => p.name === name)
+    if (!platform?.researchedData) return
+
+    updatePlatform(name, { saveStatus: 'saving' })
+
     try {
-      const res = await fetch('/api/cms/save', {
+      const res = await fetch('/api/cms/save-platform', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manufacturer, modelName: name, product: product.researchedData }),
+        body: JSON.stringify({
+          manufacturer,
+          platform: {
+            name: platform.name,
+            displayName: platform.displayName,
+            generationYear: platform.generationYear,
+            isLegacy: platform.isLegacy,
+            tiers: platform.tiers,
+            formFactors: platform.formFactors,
+            fittingOptions: platform.fittingOptions,
+          },
+          research: platform.researchedData,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
-      setProducts((prev) =>
-        prev.map((p) => p.name === name
-          ? { ...p, saveStatus: 'saved', savedFormFactorIds: data.formFactorIds ?? [] }
-          : p
-        )
-      )
+
+      updatePlatform(name, {
+        saveStatus: 'saved',
+        savedPlatformId: data.platformId,
+        savedProductIds: data.productIds ?? [],
+        savedFormFactorIds: data.formFactorIds ?? [],
+      })
     } catch {
-      setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, saveStatus: 'error' } : p)
-      )
+      updatePlatform(name, { saveStatus: 'error' })
     }
   }
 
-  // ── Store images for a saved product ──
+  // ── Store approved images ──
 
   async function storeImages(name: string) {
-    const product = products.find((p) => p.name === name)
-    if (!product?.researchedData || !product.savedFormFactorIds.length) return
+    const platform = platforms.find(p => p.name === name)
+    if (!platform || !platform.savedFormFactorIds.length) return
 
-    const imageUrls = (product.researchedData.imageUrls as DiscoveredImage[]) ?? []
-    if (imageUrls.length === 0) return
+    const approved = platform.candidateImages.filter(i => i.status === 'approved')
+    if (approved.length === 0) return
 
-    setProducts((prev) =>
-      prev.map((p) => p.name === name ? { ...p, imageStatus: 'storing' } : p)
-    )
+    updatePlatform(name, { imageStatus: 'storing' })
 
     try {
-      // Store images on the first form factor (primary)
-      const formFactorId = product.savedFormFactorIds[0]
+      // Store images on the first form factor (primary) for now
+      // TODO: match by formFactorName when multi-FF image storage is implemented
+      const formFactorId = platform.savedFormFactorIds[0]
       const res = await fetch('/api/cms/images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formFactorId, images: imageUrls }),
+        body: JSON.stringify({
+          formFactorId,
+          images: approved.map(i => ({
+            url: i.url,
+            type: i.type,
+            description: i.description,
+          })),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Image storage failed')
-      setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, imageStatus: 'stored' } : p)
-      )
+
+      updatePlatform(name, { imageStatus: 'stored' })
     } catch {
-      setProducts((prev) =>
-        prev.map((p) => p.name === name ? { ...p, imageStatus: 'error' } : p)
-      )
+      updatePlatform(name, { imageStatus: 'error' })
     }
   }
 
-  // ── Bulk research active products sequentially ──
+  // ── Bulk actions ──
 
   async function handleResearchActive() {
     setBulkResearching(true)
-    const targets = products.filter((p) => p.active && p.researchStatus === 'idle')
-    for (const product of targets) {
-      await researchProduct(product.name)
+    const targets = platforms.filter(p => p.active && p.researchStatus === 'idle')
+    for (const p of targets) {
+      await researchPlatform(p.name)
     }
     setBulkResearching(false)
   }
 
   async function handleSaveActive() {
-    const targets = products.filter((p) => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle')
-    for (const product of targets) {
-      await saveProduct(product.name)
+    const targets = platforms.filter(p => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle')
+    for (const p of targets) {
+      await savePlatform(p.name)
     }
   }
 
   // ── Derived counts ──
 
-  const activeCount       = products.filter((p) => p.active).length
-  const inactiveCount     = products.length - activeCount
-  const researchableCount = products.filter((p) => p.active && p.researchStatus === 'idle').length
-  const savableCount      = products.filter((p) => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle').length
-  const savedCount        = products.filter((p) => p.saveStatus === 'saved').length
-
-  // ── Group by platform ──
-
-  const platforms = Array.from(
-    new Map(
-      products.map((p) => [p.platform ?? '(No Platform)', p.platform ?? '(No Platform)'])
-    ).keys()
-  )
+  const activeCount = platforms.filter(p => p.active).length
+  const inactiveCount = platforms.length - activeCount
+  const researchableCount = platforms.filter(p => p.active && p.researchStatus === 'idle').length
+  const savableCount = platforms.filter(p => p.active && p.researchStatus === 'done' && p.saveStatus === 'idle').length
+  const savedCount = platforms.filter(p => p.saveStatus === 'saved').length
 
   // ── Input step ──
 
@@ -298,8 +308,8 @@ export default function ScanPage() {
             </Link>
             <h1 className="text-3xl font-bold text-white mt-4">Scan Manufacturer Lineup</h1>
             <p className="mt-2 text-zinc-400 text-sm">
-              Select a manufacturer and the AI will enumerate their full current product lineup.
-              You can then toggle which products are active and research each one.
+              Select a manufacturer and the AI will enumerate their product platforms,
+              technology tiers, form factors, and fitting options.
             </p>
           </div>
 
@@ -339,7 +349,7 @@ export default function ScanPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    Product Listing URL <span className="text-zinc-600 font-normal">(optional — helps AI find accurate info)</span>
+                    Product Listing URL <span className="text-zinc-600 font-normal">(optional)</span>
                   </label>
                   <input
                     type="url"
@@ -348,7 +358,6 @@ export default function ScanPage() {
                     placeholder="https://example.com/hearing-aids"
                     className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-600 focus:border-brand-blue outline-none transition-colors"
                   />
-                  <p className="text-xs text-zinc-600 mt-1.5">URL is passed to the AI as a reference hint. Full web scraping coming in a future update.</p>
                 </div>
               </>
             )}
@@ -374,7 +383,7 @@ export default function ScanPage() {
         <div className="w-10 h-10 border-4 border-zinc-700 border-t-brand-blue rounded-full animate-spin" />
         <div className="text-center">
           <p className="text-white font-semibold">Scanning {manufacturer} lineup…</p>
-          <p className="text-zinc-500 text-sm mt-1">Enumerating all current products.</p>
+          <p className="text-zinc-500 text-sm mt-1">Identifying platforms, tiers, and form factors.</p>
         </div>
       </div>
     )
@@ -391,13 +400,13 @@ export default function ScanPage() {
           <Link href="/" className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors">
             ← Back
           </Link>
-          <h1 className="text-2xl font-bold text-white mt-2">{manufacturer} Lineup</h1>
+          <h1 className="text-2xl font-bold text-white mt-2">{manufacturer} Platforms</h1>
           <p className="text-zinc-500 text-sm mt-0.5">
-            {products.length} products found
+            {platforms.length} platform{platforms.length !== 1 ? 's' : ''} found
           </p>
         </div>
         <button
-          onClick={() => { setStep('input'); setProducts([]) }}
+          onClick={() => { setStep('input'); setPlatforms([]) }}
           className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium px-4 py-2 rounded-xl transition-colors"
         >
           Scan Another
@@ -425,18 +434,6 @@ export default function ScanPage() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={activateAll}
-            className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Activate All
-          </button>
-          <button
-            onClick={deactivateAll}
-            className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Deactivate All
-          </button>
-          <button
             onClick={handleResearchActive}
             disabled={bulkResearching || researchableCount === 0}
             className="text-xs bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-4 py-1.5 rounded-lg transition-colors"
@@ -453,168 +450,223 @@ export default function ScanPage() {
         </div>
       </div>
 
-      {/* Product table grouped by platform */}
+      {/* Platform cards */}
       <div className="space-y-6">
-        {platforms.map((platformName) => {
-          const platformProducts = products
-            .filter((p) => (p.platform ?? '(No Platform)') === platformName)
-            .sort((a, b) => (TIER_ORDER[a.tier ?? ''] ?? 9) - (TIER_ORDER[b.tier ?? ''] ?? 9))
+        {platforms.map((platform) => (
+          <div
+            key={platform.name}
+            className={`bg-zinc-900 border rounded-2xl overflow-hidden transition-all ${
+              platform.isLegacy
+                ? 'border-zinc-800 opacity-60'
+                : platform.active
+                ? 'border-zinc-800'
+                : 'border-zinc-800 opacity-50'
+            }`}
+          >
+            {/* Platform header */}
+            <div className="px-5 py-4 border-b border-zinc-800 flex items-center gap-4">
+              <Toggle checked={platform.active} onChange={() => updatePlatform(platform.name, { active: !platform.active })} />
 
-          return (
-            <div key={platformName} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-              {/* Platform header */}
-              <div className="px-5 py-3 bg-zinc-800/60 border-b border-zinc-800 flex items-center gap-3">
-                <span className="text-sm font-bold text-white">{platformName}</span>
-                <span className="text-xs text-zinc-500">{platformProducts.length} products</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-lg font-bold text-white">{platform.name}</span>
+                  {platform.isLegacy && (
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-zinc-700 text-zinc-400 border border-zinc-600">
+                      Legacy
+                    </span>
+                  )}
+                  {platform.generationYear && (
+                    <span className="text-xs text-zinc-600">{platform.generationYear}</span>
+                  )}
+                </div>
+                {platform.displayName && (
+                  <p className="text-xs text-zinc-500 mt-0.5">{platform.displayName}</p>
+                )}
               </div>
 
-              {/* Product rows */}
-              <div className="divide-y divide-zinc-800">
-                {platformProducts.map((product) => (
-                  <div
-                    key={product.name}
-                    className={`px-5 py-4 flex items-center gap-4 transition-colors ${
-                      product.active ? '' : 'opacity-50'
-                    }`}
+              {/* Actions */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                {/* Research status */}
+                {platform.researchStatus === 'idle' && (
+                  <button
+                    onClick={() => researchPlatform(platform.name)}
+                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors"
                   >
-                    {/* Active toggle — most prominent element */}
-                    <div className="flex flex-col items-center gap-1 shrink-0">
-                      <Toggle
-                        checked={product.active}
-                        onChange={() => toggleActive(product.name)}
-                      />
-                      <span className={`text-[9px] font-bold uppercase ${product.active ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                        {product.active ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
-
-                    {/* Product info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-white text-sm">{product.name}</span>
-                        {product.tier && (
-                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${TIER_STYLES[product.tier] ?? ''}`}>
-                            {product.tier}
-                          </span>
+                    Research
+                  </button>
+                )}
+                {platform.researchStatus === 'loading' && (
+                  <span className="text-xs text-blue-400 animate-pulse px-2">Researching…</span>
+                )}
+                {platform.researchStatus === 'error' && (
+                  <button
+                    onClick={() => researchPlatform(platform.name)}
+                    className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Retry
+                  </button>
+                )}
+                {platform.researchStatus === 'done' && (
+                  <>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase">Researched</span>
+                    {platform.saveStatus === 'idle' && (
+                      <button
+                        onClick={() => savePlatform(platform.name)}
+                        className="text-xs bg-brand-blue hover:bg-blue-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Save to CMS
+                      </button>
+                    )}
+                    {platform.saveStatus === 'saving' && (
+                      <span className="text-xs text-blue-400 animate-pulse px-1">Saving…</span>
+                    )}
+                    {platform.saveStatus === 'saved' && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-emerald-400 font-semibold">✓ Saved</span>
+                        {platform.savedPlatformId && (
+                          <Link
+                            href={`/platforms/${platform.savedPlatformId}`}
+                            className="text-xs text-brand-blue hover:text-blue-400 transition-colors"
+                          >
+                            View →
+                          </Link>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        {product.displayName && (
-                          <span className="text-xs text-zinc-500">{product.displayName}</span>
-                        )}
-                        {product.formFactorStyles?.length > 0 && (
-                          <span className="text-xs text-zinc-600">{product.formFactorStyles.join(' · ')}</span>
-                        )}
-                        {product.availableTiers && product.availableTiers.length > 0 && (
-                          <span className="text-xs text-zinc-600">Tiers: {product.availableTiers.join(', ')}</span>
-                        )}
-                        {product.releaseYear && (
-                          <span className="text-xs text-zinc-600">{product.releaseYear}</span>
-                        )}
-                      </div>
-                      {product.formFactorRestrictions && (
-                        <p className="text-[10px] text-zinc-600 mt-0.5">{product.formFactorRestrictions}</p>
-                      )}
-                    </div>
-
-                    {/* Research status + actions */}
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                      <StatusPill status={product.researchStatus} />
-                      {product.researchStatus === 'done' && (() => {
-                        const imgCount = ((product.researchedData?.imageUrls as unknown[]) ?? []).length
-                        return imgCount > 0
-                          ? <span className="text-[10px] text-purple-400 font-bold">{imgCount} img</span>
-                          : null
-                      })()}
-
-                      {product.researchStatus === 'idle' && (
-                        <button
-                          onClick={() => researchProduct(product.name)}
-                          className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          Research
-                        </button>
-                      )}
-                      {product.researchStatus === 'loading' && null}
-                      {product.researchStatus === 'error' && (
-                        <button
-                          onClick={() => researchProduct(product.name)}
-                          className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          Retry
-                        </button>
-                      )}
-                      {product.researchStatus === 'done' && (
-                        <>
-                          {product.saveStatus === 'idle' && (
-                            <button
-                              onClick={() => saveProduct(product.name)}
-                              className="text-xs bg-brand-blue hover:bg-blue-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                            >
-                              Save
-                            </button>
-                          )}
-                          {product.saveStatus === 'saving' && (
-                            <span className="text-xs text-blue-400 animate-pulse px-1">Saving…</span>
-                          )}
-                          {product.saveStatus === 'saved' && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-emerald-400 font-semibold px-1">✓ Saved</span>
-                              {/* Image storage buttons */}
-                              {(() => {
-                                const imageUrls = (product.researchedData?.imageUrls as DiscoveredImage[]) ?? []
-                                if (imageUrls.length === 0) return null
-                                if (product.imageStatus === 'idle') {
-                                  return (
-                                    <button
-                                      onClick={() => storeImages(product.name)}
-                                      className="text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                                    >
-                                      Store {imageUrls.length} {imageUrls.length === 1 ? 'Image' : 'Images'}
-                                    </button>
-                                  )
-                                }
-                                if (product.imageStatus === 'storing') {
-                                  return <span className="text-xs text-purple-400 animate-pulse px-1">Storing images…</span>
-                                }
-                                if (product.imageStatus === 'stored') {
-                                  return <span className="text-xs text-purple-400 font-semibold px-1">✓ Images stored</span>
-                                }
-                                if (product.imageStatus === 'error') {
-                                  return (
-                                    <button
-                                      onClick={() => storeImages(product.name)}
-                                      className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
-                                    >
-                                      Retry Images
-                                    </button>
-                                  )
-                                }
-                                return null
-                              })()}
-                            </div>
-                          )}
-                          {product.saveStatus === 'error' && (
-                            <button
-                              onClick={() => saveProduct(product.name)}
-                              className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
-                            >
-                              Retry Save
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                    )}
+                    {platform.saveStatus === 'error' && (
+                      <button
+                        onClick={() => savePlatform(platform.name)}
+                        className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Retry Save
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
-          )
-        })}
+
+            {/* Platform body */}
+            <div className="px-5 py-4 space-y-4">
+              {/* Tiers */}
+              {platform.tiers.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                    Technology Tiers
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {platform.tiers.map(tier => (
+                      <span
+                        key={tier.id}
+                        className={`text-xs font-bold px-3 py-1 rounded-lg border ${TIER_STYLES[tier.tier] ?? TIER_STYLES.standard}`}
+                      >
+                        {tier.label}
+                        <span className="font-normal opacity-70 ml-1">({tier.tier})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Form Factors */}
+              {platform.formFactors.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                    Form Factors ({platform.formFactors.length})
+                  </div>
+                  <div className="space-y-1.5">
+                    {platform.formFactors.map(ff => (
+                      <div key={ff.name} className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${STYLE_COLORS[ff.style] ?? STYLE_COLORS.other}`}>
+                          {ff.style}
+                        </span>
+                        <span className="text-sm text-zinc-300">{ff.name}</span>
+                        {ff.availableTiers && ff.availableTiers.length > 0 && ff.availableTiers.length < platform.tiers.length && (
+                          <span className="text-[10px] text-zinc-600">
+                            ({ff.availableTiers.join(', ')} only)
+                          </span>
+                        )}
+                        {ff.notes && (
+                          <span className="text-[10px] text-zinc-600 italic">{ff.notes}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Fitting Options */}
+              {platform.fittingOptions.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                    Fitting Options
+                  </div>
+                  {platform.fittingOptions.map(fo => (
+                    <div key={fo.name} className="flex items-start gap-2 mb-1">
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 shrink-0">
+                        FITTING
+                      </span>
+                      <div>
+                        <span className="text-sm text-zinc-300">{fo.name}</span>
+                        {fo.description && (
+                          <p className="text-[10px] text-zinc-600 mt-0.5">{fo.description}</p>
+                        )}
+                        {fo.styles.length > 0 && (
+                          <span className="text-[10px] text-zinc-600">Styles: {fo.styles.join(', ')}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Image Approval (after research) */}
+              {platform.candidateImages.length > 0 && (
+                <div className="pt-2 border-t border-zinc-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                      Product Images
+                    </div>
+                    {platform.saveStatus === 'saved' && (
+                      <>
+                        {platform.imageStatus === 'idle' && (
+                          <button
+                            onClick={() => storeImages(platform.name)}
+                            disabled={platform.candidateImages.filter(i => i.status === 'approved').length === 0}
+                            className="text-[10px] bg-purple-500/20 hover:bg-purple-500/30 disabled:opacity-40 text-purple-400 font-semibold px-3 py-1 rounded-lg transition-colors"
+                          >
+                            Store {platform.candidateImages.filter(i => i.status === 'approved').length} Approved
+                          </button>
+                        )}
+                        {platform.imageStatus === 'storing' && (
+                          <span className="text-[10px] text-purple-400 animate-pulse">Storing images…</span>
+                        )}
+                        {platform.imageStatus === 'stored' && (
+                          <span className="text-[10px] text-purple-400 font-semibold">✓ Images stored</span>
+                        )}
+                        {platform.imageStatus === 'error' && (
+                          <button
+                            onClick={() => storeImages(platform.name)}
+                            className="text-[10px] bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1 rounded-lg transition-colors"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <ImageApproval
+                    images={platform.candidateImages}
+                    onChange={(images) => updatePlatform(platform.name, { candidateImages: images })}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="pb-8" />
-
     </div>
   )
 }
