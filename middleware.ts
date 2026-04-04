@@ -6,7 +6,7 @@ import type { NextRequest } from 'next/server'
 const PUBLIC_PREFIXES = ['/auth', '/api/auth']
 
 // Routes operators are allowed to access (in addition to public routes)
-const OPERATOR_ALLOWED_PREFIXES = ['/intake', '/sites', '/api/intake', '/api/cms/sites']
+const OPERATOR_ALLOWED_PREFIXES = ['/intake', '/sites', '/api/intake', '/api/cms/sites', '/api/sites']
 
 // Where operators land when they hit a restricted page
 const OPERATOR_HOME = '/sites'

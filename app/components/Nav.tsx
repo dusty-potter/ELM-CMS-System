@@ -10,6 +10,7 @@ const ROLE_LINKS: Record<string, NavLink[]> = {
   admin: [
     { href: '/products', label: 'Products' },
     { href: '/sites', label: 'Sites' },
+    { href: '/cms/sites', label: 'CMS Sites' },
     { href: '/users', label: 'Users' },
     { href: '/scan', label: 'Scan Lineup' },
     { href: '/ingest', label: 'Research' },
