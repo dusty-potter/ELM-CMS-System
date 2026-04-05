@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import Link from 'next/link'
+import ImageScanPanel from './components/ImageScanPanel'
+import ImageSlotAssigner from './components/ImageSlotAssigner'
+import type { TeamMember, Location } from '@/lib/pipeline/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,6 +102,18 @@ export default function SiteDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [revisionText, setRevisionText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [clientImages, setClientImages] = useState<Array<{
+    id: string; sourceUrl: string; localUrl: string | null; variantThumbnail: string | null;
+    classification: string; confidence: number | null; altText: string | null;
+    imported: boolean; slot: string | null;
+  }>>([])
+
+  const fetchImages = useCallback(() => {
+    fetch(`/api/sites/${slug}/images`)
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setClientImages(data) })
+      .catch(() => {})
+  }, [slug])
 
   useEffect(() => {
     fetch(`/api/sites/${slug}`)
@@ -109,7 +124,8 @@ export default function SiteDetailPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [slug])
+    fetchImages()
+  }, [slug, fetchImages])
 
   async function submitRevision() {
     if (!revisionText.trim()) return
@@ -415,6 +431,22 @@ export default function SiteDetailPage() {
           )}
         </div>
       )}
+
+      {/* Image Management */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-6">
+        <ImageScanPanel
+          slug={slug}
+          images={clientImages}
+          onRefresh={fetchImages}
+        />
+        <ImageSlotAssigner
+          slug={slug}
+          images={clientImages}
+          teamMembers={(payload.teamMembers as TeamMember[]) ?? []}
+          locations={(payload.locations as Location[]) ?? []}
+          onRefresh={fetchImages}
+        />
+      </div>
     </div>
   )
 }

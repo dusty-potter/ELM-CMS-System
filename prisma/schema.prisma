@@ -725,6 +725,7 @@ model ClientIntake {
   intakeBy    String
   createdAt   DateTime     @default(now())
   pipelineRun PipelineRun?
+  images      ClientImage[]
 
   @@map("client_intakes")
 }
@@ -771,4 +772,50 @@ model Revision {
   createdAt     DateTime       @default(now())
 
   @@map("revisions")
+}
+
+// ---------------------------------------------------------------------------
+// Image Classification
+// ---------------------------------------------------------------------------
+
+enum ImageClassification {
+  provider_headshot
+  staff_headshot
+  team_group
+  location_exterior
+  location_interior
+  lifestyle
+  logo
+  hero
+  service
+  other
+}
+
+// ---------------------------------------------------------------------------
+// Client Image
+//
+// Images discovered from scanning a client's existing website or uploaded
+// manually. Each image can be assigned to a template asset slot so the
+// built site uses real client photos instead of placeholders.
+// ---------------------------------------------------------------------------
+
+model ClientImage {
+  id               String              @id @default(cuid())
+  intakeId         String
+  intake           ClientIntake        @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+  sourceUrl        String
+  localUrl         String?
+  variantHeroWide  String?
+  variantSquare    String?
+  variantThumbnail String?
+  classification   ImageClassification @default(other)
+  slot             String?
+  confidence       Float?
+  altText          String?
+  imported         Boolean             @default(false)
+  sortOrder        Int                 @default(0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("client_images")
 }

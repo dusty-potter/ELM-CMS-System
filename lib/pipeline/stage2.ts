@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { slugify } from '@/lib/slugify'
 import { randomBytes } from 'crypto'
 import type { IntakeData, StageLogEntry, Stage2Result } from './types'
+import { runStage3 } from './stage3'
 import {
   generateSiteConfig,
   generateIndexCss,
@@ -300,6 +301,13 @@ export async function runStage2(intakeId: string): Promise<Stage2Result> {
       }] : [])],
       status: failedCommits.length === CONFIG_FILES.length ? 'failed' : 'running',
     })
+
+    // Auto-chain Stage 3 (deploy to Cloud Run)
+    if (failedCommits.length < CONFIG_FILES.length) {
+      void runStage3(intakeId).catch((err) => {
+        console.error(`[pipeline] stage3 failed for intake ${intakeId}:`, err)
+      })
+    }
 
     return {
       success: true,
