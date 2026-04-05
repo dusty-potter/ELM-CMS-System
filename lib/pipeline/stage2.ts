@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma'
+import { slugify } from '@/lib/slugify'
+import { randomBytes } from 'crypto'
 import type { IntakeData, StageLogEntry, Stage2Result } from './types'
 import {
   generateSiteConfig,
@@ -240,27 +242,33 @@ export async function runStage2(intakeId: string): Promise<Stage2Result> {
     let siteId: string | undefined
 
     try {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const siteRes = await fetch(`${appUrl}/api/cms/sites`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: payload.businessName,
-          domain: payload.domain,
-          webhookUrl: payload.domain ? `https://${payload.domain}/api/revalidate` : undefined,
-          githubRepo: repoFullName,
-          manufacturerNames: payload.manufacturersCarried,
-        }),
-      })
+      const cmsSiteId = slugify(payload.businessName)
+      const apiKey = randomBytes(24).toString('hex')
 
-      if (!siteRes.ok) {
-        const errBody = await siteRes.text()
-        throw new Error(`Site registration failed: ${siteRes.status} — ${errBody}`)
+      // Link manufacturers that exist in the CMS
+      const mfrLinks = []
+      if (payload.manufacturersCarried?.length) {
+        for (const mName of payload.manufacturersCarried) {
+          const mfr = await prisma.manufacturer.findFirst({ where: { name: mName } })
+          if (mfr) mfrLinks.push({ manufacturerId: mfr.id })
+        }
       }
 
-      const siteData = await siteRes.json()
-      siteApiKey = siteData.apiKey
-      siteId = siteData.id
+      const site = await prisma.site.create({
+        data: {
+          id: cmsSiteId,
+          name: payload.businessName,
+          domain: payload.domain || '',
+          webhookUrl: payload.domain ? `https://${payload.domain}/api/revalidate` : null,
+          githubRepo: repoFullName,
+          apiKey,
+          active: true,
+          supportedManufacturers: mfrLinks.length ? { create: mfrLinks } : undefined,
+        },
+      })
+
+      siteApiKey = site.apiKey
+      siteId = site.id
 
       step = completeLogEntry(step, { siteId, apiKey: siteApiKey })
     } catch (err) {
